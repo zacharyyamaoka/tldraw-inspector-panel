@@ -44,8 +44,30 @@
 // both modes. It differs from the dock only in the per-variant `--v-*`
 // palette, which is a nuance; `<body>` is a different colour scheme, which
 // is a bug.
+// WHY the cache, added after a round-3 judge priced the fallback properly:
+// `.tl-container` is a safe floor but NOT a free one. V7's palette
+// (`--fig-*`, and the `--popover` it feeds) is scoped to the dock; one level
+// up, tldraw's own panel token answers instead — measured as
+// `hsl(235 6.8% 13.5%)` ≈ #202025 against V7's #2c2c2c. So the fallback turns
+// a white popup into a subtly WRONG-DARK popup, which is better but still a
+// visible miss on a "pixel for pixel" brief.
+//
+// The dock that existed a moment ago is a far better answer than a different
+// element: the failure mode this guards is a transient miss (dock between
+// mounts, a theme flip re-rendering it), not a dock that never existed. Guard
+// on `isConnected` so a detached node from a previous mount is never handed to
+// a portal — a detached container renders nothing at all, which would trade a
+// colour bug for an invisible popup.
+let lastConnectedDock: HTMLElement | null = null
+
 export function dockPortalContainer(): HTMLElement | null {
   if (typeof document === "undefined") return null
-  return document.querySelector<HTMLElement>('[data-testid="inspector"]')
-    ?? document.querySelector<HTMLElement>(".tl-container")
+  const dock = document.querySelector<HTMLElement>('[data-testid="inspector"]')
+  if (dock) {
+    lastConnectedDock = dock
+    return dock
+  }
+  if (lastConnectedDock?.isConnected) return lastConnectedDock
+  lastConnectedDock = null
+  return document.querySelector<HTMLElement>(".tl-container")
 }

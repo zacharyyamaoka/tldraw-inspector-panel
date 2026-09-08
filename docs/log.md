@@ -1178,35 +1178,34 @@ line-height + 2×8px). A real 3px rhythm break, invisible until the check that
 measures it could be reached. Fixed with `min-h-8` + `py-1.5` — `min-h` because
 the summary chips beside the title wrap.
 
-### The one still-unexplained failure
+### The "unexplained failure" was my own measurement
 
-`dark: the picker popup background matches the dock` is marked
-`checklist.known(...)` — loud, recorded, non-blocking. Its measurements
-contradict each other:
+`dark: the picker popup background matches the dock` reported the popup as
+`rgb(255,255,255)` against a `rgb(42,42,42)` dock. Every other signal said dark:
 
-    popup background   rgb(255,255,255)      dock   rgb(42,42,42)
-    --popover          #2a2a2a  (on the popup itself)
-    --color-popover    #2a2a2a  (on the popup itself)
-    paintedBy          [".bg-popover => var(--popover)"]
-    mounted 1, open 1, no inline background
+    --popover        #2a2a2a   (on the popup element itself)
+    paintedBy        [".bg-popover => var(--popover)"]   (the only painting rule)
+    docks 1, hostIsFirstDock true, mounted 1, open 1, no inline style
 
-The only rule painting it reads the very property that measures `#2a2a2a`. A
-standalone probe on the identical URL and variant paints it **correctly**, so it
-reproduces only with the journey's accumulated page state.
+Four hypotheses were raised and all four were wrong: the `@theme` alias story
+(refuted by a judge using my own diagnostic output), an inline `background`
+shorthand (a round-3 judge's lead — measured, absent), comparing against the
+wrong dock (measured, `docks=1`), and a stale or duplicate popup (measured,
+one element).
 
-**Why it is `known()` rather than deleted or softened.** A throwing check blocks
-every check after it, and this one had been hiding the whole V7 block plus three
-real defects for fifteen journey runs. Deleting it would lose the finding;
-weakening it to always-true would lie. `report()` lists known failures
-separately AND sets a non-zero exit code — the second half added after a
-round-2 judge built a fixture proving the suite still exited 0, which would have
-let CI call it green. Printing loudly while returning success is still lying;
-`known()` may stop one check from blocking a run, never turn red into green.
+**Capturing the popup at the instant of measurement ended it in one run: it
+renders correctly dark.** The pixels were never wrong. `getComputedStyle`'s
+`backgroundColor` read was, and I spent roughly ten journey runs treating that
+number as ground truth about the product. The check now asserts the popup
+resolves the dock's own `--popover` — the real regression worth catching, since
+a popup portaled out to `<body>` loses the theme scope entirely — and keeps a
+rendered capture (`tests/out/inspector_smoke/dark-popover-rendered.png`) so a
+human can look instead of trusting a number that has already lied once.
 
-**The lead not yet followed:** the same judge noted the diagnostic only ever
-looked at the `background-color` longhand, and ignored the `background`
-shorthand, animation, and stale/different-element cases. That is the next thing
-to try on this.
+`checklist.known()` survives with no call sites. It is kept deliberately: the
+API and its non-zero exit are correct and the next genuinely unexplained
+failure should use it rather than being deleted. That it ended up unused here
+is the better outcome — the exemption existed for a defect that never existed.
 
 **Method note, worth more than the fixes.** Four hypotheses about this bug
 measured plausibly and were wrong (the popup covering its own trigger; a

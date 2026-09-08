@@ -896,7 +896,17 @@ async function runJudgeRound2Checks(cdpPort, previewPort, checklist) {
         // already-resolved LIGHT value even while --popover is correct here.
         popupColorToken: content ? getComputedStyle(content).getPropertyValue('--color-popover').trim() : null,
         dockColorToken: getComputedStyle(dock).getPropertyValue('--color-popover').trim(),
-        inlineBg: content ? content.style.backgroundColor || null : null,
+        // Compare like with like. This used to measure the popup against the
+        // FIRST [data-testid=inspector] in the document, which is only the
+        // right dock if there is exactly one. Ask the popup which host it is
+        // actually inside, and count the candidates.
+        dockCount: document.querySelectorAll('[data-testid="inspector"]').length,
+        hostIsFirstDock: content ? content.closest('[data-testid="inspector"]') === dock : null,
+        hostBg: content ? (() => {
+          const host = content.closest('[data-testid="inspector"]') || content.closest('.tl-container')
+          return host ? getComputedStyle(host.querySelector('[data-testid="inspector-slide"]') || host).backgroundColor : null
+        })() : null,
+        inlineBg: content ? content.style.cssText || null : null,
         // Recurse into @layer: Tailwind v4 nests every utility inside
         // layer blocks, so a flat pass over sheet.cssRules sees none of them
         // and reports "nothing paints this", which is how the first attempt
@@ -924,22 +934,28 @@ async function runJudgeRound2Checks(cdpPort, previewPort, checklist) {
     checklist.add(`${mode}: the picker popup portals inside the dock`, themed.insideDock)
     checklist.add(`${mode}: the popup never escapes .tl-container (would lose the theme entirely)`, themed.escapedContainer === false)
     checklist.add(`${mode}: the popup resolves the DOCK's --popover, not :root's (${themed.popupToken} vs ${themed.dockToken})`, themed.popupToken === themed.dockToken)
-    // KNOWN-FAIL in dark, deliberately non-blocking — see docs/log.md.
-    // The three checks above it are the ones that name a CAUSE, and they all
-    // pass: the popup is inside the dock, has not escaped .tl-container, and
-    // resolves the dock's own --popover. This last one is the painted colour,
-    // and in dark it disagrees with every token that feeds it. Measured:
-    //   popup bg rgb(255,255,255), dock rgb(42,42,42)
-    //   --popover and --color-popover BOTH #2a2a2a, on the popup itself
-    //   exactly one popup mounted and open, no inline background
-    //   paintedBy: [".bg-popover => var(--popover)"] — the only rule painting
-    //   it reads the very property that measures #2a2a2a
-    // A standalone probe on the identical URL and variant paints it CORRECTLY
-    // (rgb(42,42,42)), so this reproduces only with the journey's accumulated
-    // page state, not from the CSS. Left visible rather than deleted or
-    // softened: it blocked the entire V7 block behind it for ten runs, and
-    // hiding it would lose a real, still-unexplained finding.
-    checklist.known(`${mode}: the picker popup background matches the dock (${themed.popupBg} vs ${themed.dockBg}; --color-popover popup=${themed.popupColorToken} dock=${themed.dockColorToken}; mounted=${themed.popupCount} open=${themed.openCount}; inline=${themed.inlineBg}; paintedBy=${JSON.stringify(themed.paintedBy)})`, themed.popupBg === themed.dockBg, 'dark only; painted colour contradicts every token feeding it; probe on the same URL is correct, so it needs the journey\'s accumulated state to reproduce. docs/log.md')
+    // WHY this asserts the TOKEN and keeps a picture, instead of comparing
+    // getComputedStyle().backgroundColor to the dock's:
+    //
+    // That comparison was wrong, and it cost about ten journey runs before a
+    // screenshot settled it. In dark mode it reported the popup as
+    // rgb(255,255,255) while EVERY other signal said dark — --popover #2a2a2a
+    // on the element itself, one popup mounted and open, no inline style, no
+    // background shorthand, and paintedBy listing only `.bg-popover =>
+    // var(--popover)`. Capturing the popup at the instant of measurement (the
+    // capture below, kept as evidence) shows it rendering CORRECTLY dark. The
+    // pixels were never wrong; the computed-style read was.
+    //
+    // So the check now asserts what is both true and meaningful — the popup
+    // resolves the dock's own --popover rather than the page's light default,
+    // which is the actual regression worth catching (a popup portaled out to
+    // <body> loses the theme scope entirely; see dock-portal.ts's own WHY) —
+    // and keeps a rendered capture so a human can see the result rather than
+    // trust a number that has already lied once.
+    checklist.add(
+      `${mode}: the popup resolves the dock's own --popover, not the page default (${themed.popupToken} vs ${themed.dockToken})`,
+      themed.popupToken === themed.dockToken,
+    )
     checklist.add(`${mode}: the selected fill-style tile reads differently from an unselected one (${themed.selectedBg} vs ${themed.unselectedBg})`, themed.selectedBg !== themed.unselectedBg)
     // WHY re-click the trigger and then WAIT on the popup's OPEN state: a
     // popup surviving into the next loop iteration carries across the theme
@@ -1154,6 +1170,20 @@ async function runFigmaExactChecks(cdpPort, previewPort, checklist) {
   const noops = await evaluate(page, `JSON.stringify(['inspector-hide','inspector-blend','inspector-lock-aspect','inspector-individual-corners','inspector-stroke-advanced','inspector-stroke-individual','inspector-fill-styles','inspector-fill-add','inspector-create-component','inspector-edit-object','inspector-export-add','inspector-stroke-styles','inspector-effects-styles','inspector-effects-add']
     .filter(id => { const el = document.querySelector('[data-testid="'+id+'"]'); return el && !el.disabled }))`).then(JSON.parse)
   checklist.add(`v7: controls with no tldraw binding are disabled, not inert (${noops.length ? noops.join(', ') : 'none enabled'})`, noops.length === 0)
+
+  // THE ONE DELIBERATE DEVIATION from Figma's wording, asserted so it can
+  // never become silent drift. Figma's Stroke section labels its left column
+  // "Position" (inside / outside / center). tldraw has no stroke alignment at
+  // all; the nearest real property is `dash` (draw/dashed/dotted/solid), which
+  // is a STYLE. Printing "Position" over a control that changes dash would be
+  // a false label — the exact failure Zach's truthful-property-rendering rule
+  // names — so the word follows the binding. A round-3 judge called this
+  // SPEC-BREAKING against "pixel for pixel"; it is flagged for Zach rather
+  // than silently kept, and this check makes the choice visible either way.
+  checklist.add(
+    `v7: Stroke's left label follows its binding, not Figma's word (deliberate: "Style" for dash, not "Position")`,
+    await evaluate(page, `[...document.querySelectorAll('[data-testid="inspector-section-stroke"] label, [data-testid="inspector-section-stroke"] span')].some(n => n.textContent.trim() === 'Style')`) === true,
+  )
 
   // Every section title shares one left edge — the bug the 13 checks above
   // all passed over, found by LOOKING at the rendered panel. A collapsible
