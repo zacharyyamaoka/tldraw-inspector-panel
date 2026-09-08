@@ -15,7 +15,8 @@
         "react-colorful",
         "cn",
         "lucide-react",
-        "@tldraw/assets@5.3.2"
+        "@tldraw/assets@5.3.2",
+        "react-dom"
       ],
       "registryDependencies": [
         "button",
