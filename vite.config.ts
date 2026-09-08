@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
@@ -31,6 +32,14 @@ export default defineConfig({
     // bundler resolves the same imports fine. Excluding the package from
     // pre-bundling is tldraw's own documented workaround for self-hosted assets.
     exclude: ['@tldraw/assets'],
+  },
+  test: {
+    // WHY: vitest's default include glob walks every directory under the repo
+    // root, and this repo keeps parallel lane checkouts in .worktrees/ (see
+    // README). Without this, `npm run check` on main runs the peer worktrees'
+    // test files too — against main's sources — and reports their failures as
+    // main's. Each worktree runs its own check.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.worktrees/**'],
   },
   build: {
     rollupOptions: {
