@@ -202,40 +202,62 @@ unchanged) — see the `WHY` there and docs/log.md's M2 entry.
 ## Stock check (M4)
 
 A "Stock check" button, mounted through tldraw's `components.SharePanel` seam
-(`src/board/mount.tsx`), exports the live board the way a `.tldr` save would
-(`serializeTldrawJson`), reparses it against a fresh, unconfigured
-`createTLSchema()`, mounts that store in a second, hidden `<Tldraw>`
-(`src/compat/hiddenStockMount.tsx`), and diffs what each side actually paints:
-whole board first, then every shape stock tldraw can also render, ranked by
-divergence (`src/compat/stockCheck.ts`, `src/compat/StockCheckReport.tsx`).
-This is the instrument the plan's §4 calls for — it makes layer 2 (paint
-overrides carried in `shape.meta`, `getCustomDisplayValues`) visible and
-ranked, since a schema that never installed those overrides can't paint them.
-A parse rejection (a board stock tldraw genuinely refuses) is reported as the
-loudest possible row and nothing else runs.
+on the chrome route (`src/App.tsx`) and the stock route (`src/stock.tsx`) —
+never `bare.html`, the pixel gate's control — exports the live board the way
+a `.tldr` save would (`serializeTldrawJson`), reparses it against a fresh,
+unconfigured `createTLSchema()`, mounts that store in a second, hidden
+`<Tldraw>` (`src/compat/hiddenStockMount.tsx`), and diffs what each side
+actually paints: whole board first, then every shape stock tldraw can also
+render, ranked by divergence (`src/compat/stockCheck.ts`,
+`src/compat/StockCheckReport.tsx`). This is the instrument the plan's §4
+calls for — it makes layer 2 (paint overrides carried in `shape.meta`,
+`getCustomDisplayValues`) visible and ranked, since a schema that never
+installed those overrides can't paint them. A parse rejection (a board stock
+tldraw genuinely refuses) is reported as the loudest possible row and nothing
+else runs.
 
 Run it: click "Stock check" top-right in the running app, or drive it
 headlessly with `npm run test:compat` (builds, serves `dist/` on a free port,
 opens the seeded board, clicks the button, reads the report back out of the
-DOM). Threshold is `pixelmatch` at `0.1` — looser than the M1 pixel gate's
-byte-exact `0`, because M4's diffs are two independently-rasterized SVG→canvas
-exports of shapes that render the same underlying record; `0.1` absorbs
-anti-aliasing jitter between them without hiding a real divergence.
+DOM; writes to `tests/out/compat_smoke/`, per the per-journey output-dir
+convention M2 established). Threshold is `pixelmatch` at `0.1` — looser than
+the M1 pixel gate's byte-exact `0`, because M4's diffs are two
+independently-rasterized SVG→canvas exports of shapes that render the same
+underlying record; `0.1` absorbs anti-aliasing jitter between them without
+hiding a real divergence.
 
-**Known blind spot:** the white text halo (`--tl-text-outline`) is a CSS
+**Known blind spot #1:** the white text halo (`--tl-text-outline`) is a CSS
 variable, not an exported property — it never shows up as a diff on either
 side even where it visibly differs on-screen. Stated in the report's footer,
 not silently swallowed.
 
-**Interaction with the M1 pixel gate.** `components.SharePanel` is wired in
-`src/board/mount.tsx`, the one file `bare.html` and `index.html` both build
-their board from — so `bare.html` now paints the same unstyled button
-`index.html` paints styled. `tests/stock_pixels.mjs`'s byte-exact gate
-(threshold 0) currently fails on exactly that: ~11.5k / ~14k changed px out of
-~1.4M, both from the button's pixels, nothing else. This is expected fallout
-of putting a real chrome control on the one shared seam, not a regression in
-what the gate was built to prove (Tailwind/shadcn/Base UI stay inert *inside
-the canvas*) — `tests/stock_pixels.mjs` is out of this branch's confined edit
-list (a peer is mid-flight on it for M2) and is not touched here; whoever
-merges M4 needs to teach that gate about the button before `npm run check`
-goes green again. See `docs/log.md`'s M4 entry.
+**Known blind spot #2, and the pre-flight rule that covers it:**
+`src/inspector/configuredUtils.ts`'s `GeoShapeUtil.configure({ customGeoTypes
+})` permanently appends `'systemsketch-rounded-rect'` to `GeoShapeGeoStyle`'s
+values — a mutable module-singleton array — the moment either chrome route
+imports it, which happens before the button can ever run. The hidden "stock"
+mount shares that same JS realm, so its schema's validator sees the mutated
+enum too and accepts a record a real, separate stock tldraw process would
+refuse outright. `src/compat/stockEnums.ts` holds the real stock `geo`/colour
+vocabularies as static literals (checked against a fresh, never-mutated
+import in `stockEnums.test.ts`) precisely so this check has ground truth the
+page's own singletons can no longer provide. `stockCheck.ts` walks every
+exported record against them *before any image work*, renders each violation
+as its own red "Stock tldraw would refuse this record" row right after the
+parse row, and forces the whole-board reading red regardless of pixel count.
+One more trap this surfaced: mounting — not merely rendering — a store
+carrying an unrecognized custom geo type crashes tldraw's own error boundary
+inside a reactive geometry cache, which retries forever rather than
+throwing, so `runStockCheck` hangs silently instead of erroring. Fixed by
+deleting refused records from the parsed store before the hidden editor ever
+mounts, which also happens to be the more honest model — a real stock
+tldraw process never rendered them either.
+
+**The M1 pixel gate stays byte-exact outside its masks.** `SharePanel:
+StockCheckButton` lives in each chrome route's own `components` map, never in
+`src/board/mount.tsx` (the one file every entry, `bare.html` included,
+shares) — bare.html mounts none, so it never paints a copy of the button at
+all. `tests/stock_pixels.mjs` masks the button's own DOM rect the same way it
+already masks the Inspector dock: `bare vs index` is 0/0 changed px outside
+313,380 / 331,436 masked px, and the `?preflight=1` mutation check still
+catches 763 — the same numbers M2 left the gate at.

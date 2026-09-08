@@ -435,3 +435,97 @@ exactly the failure mode a real gate has to refuse to confuse) — so
 `tests/compat_smoke.mjs` checks for `configuredUtils.ts` at run time and
 marks that row `SKIPPED: ...` with the reason inline, rather than asserting
 something it can't yet measure. Re-run once M2 lands the configured utils.
+
+## 2026-09-07 — M4 integration: rebase onto M2, close the pixel-gate regression, the enum blind spot
+
+M2 landed on `main` (`921d83c`..`96cbd35`: the Inspector, the two/three-route
+split, the view audit) while M4 was in flight on `.worktrees/m4-compat`. This
+entry is the integration pass: `git rebase main`, then four follow-ups the
+coordinator's audit named.
+
+**Rebase conflict: `src/board/mount.tsx`.** M2's own audit had already
+corrected the exact mistake M4's first cut made — hard-coding a component
+into `Board` itself, the same shape as M2's original `withInspector` boolean
+that let `bare.html` grow an Inspector behind a query switch. Resolved by
+taking main's `mount.tsx` untouched and moving `SharePanel: StockCheckButton`
+into `src/App.tsx` and `src/stock.tsx`'s own `components` maps instead — the
+stock route gets it too, since "does this board still open in real stock
+tldraw" is at least as meaningful on an otherwise-completely-stock canvas.
+`bare.html` passes no `components` at all, so it stops painting even an
+unstyled copy of the button. Re-ran `tests/stock_pixels.mjs`: bare vs index
+is back to 0/0 changed px outside the mask (313,380 / 331,436 masked px,
+button rect included the same way the Inspector dock already was), matching
+the numbers M2 left the gate at before M4 ever touched it.
+
+**Journey convention: own subdirectory.** `tests/compat_smoke.mjs` now
+writes to and clears only `tests/out/compat_smoke/`, per M2's "Journeys own
+their output directories" fix (`03559fe`) — it was still writing straight to
+`tests/out/` from before that convention existed. Added to `check`'s line,
+after the Inspector journey.
+
+**Case (b) unskipped.** `src/inspector/configuredUtils.ts` is on `main` now,
+so the paint-override case runs unconditionally: writing
+`meta.systemSketchPrimitiveOverride` really does put the overridden
+rectangle first with a non-zero diff, and now also asserts the whole-board
+row goes from 0 to non-zero alongside it.
+
+**The enum blind spot no in-browser oracle can see, and the crash it hid.**
+`configuredUtils.ts`'s `GeoShapeUtil.configure({ customGeoTypes })` calls
+`GeoShapeGeoStyle.addValues('systemsketch-rounded-rect')` as a side effect —
+confirmed by reading `node_modules/tldraw/src/lib/shapes/geo/GeoShapeUtil.tsx`
+directly. `GeoShapeGeoStyle` is a mutable module-singleton array
+(`EnumStyleProp#addValues` in `@tldraw/tlschema` mutates in place,
+permanently, for the life of the module graph), and both chrome routes
+import `configuredUtils.ts` before the Stock check button can ever run — so
+by the time `runStockCheck` executes, the hidden "stock" mount's own schema
+validates against the SAME already-mutated array, and happily accepts a
+record a real, separate stock tldraw process would refuse outright. Added
+`src/compat/stockEnums.ts`: static literals for the real stock `geo`
+(20 values) and colour (13 values) vocabularies, checked in
+`stockEnums.test.ts` against a fresh import of `GeoShapeGeoStyle`/
+`DefaultColorStyle` from `@tldraw/tlschema` — a test file that must never
+import `configuredUtils.ts`, even transitively, or it would only be
+checking the mutated array against itself. `stockCheck.ts` walks every
+exported shape record against these two lists *before any image work* and
+collects violations as `RefusalRow`s.
+
+Wiring this in surfaced a second bug, found the hard way: the journey's new
+case just hung — `waitFor` timed out with no thrown error and no console
+error either. Instrumenting `runStockCheck` with temporary `console.log`s
+(read back via a dev-server + CDP debug harness, since `page.send` couldn't
+`awaitPromise` on a promise that never resolves) traced it to
+`mountHiddenStockEditor`'s own promise never settling: mounting — not merely
+calling `toImage` on — a store containing a shape with an unrecognized
+`props.geo` crashes deep inside a reactive geometry computed cache
+(`GeoShapeUtil.getGeometry` → `getGeoShapePath` → `_getGeoPath` throws
+`Unknown geo type: …`, since the hidden mount's plain `GeoShapeUtil` has no
+`customGeoTypes` registered). tldraw's own `<Tldraw>` wraps this in an error
+boundary that retries the mount rather than surfacing the error, so
+`onMount` simply never fires and the whole check hangs forever instead of
+failing loudly. Fixed by calling `parsed.value.remove(refusedIds)` on the
+parsed store *before* it is ever handed to `mountHiddenStockEditor` — which
+is also the more honest model, since a real stock tldraw process never
+rendered those shapes either, having refused the whole file before painting
+a single pixel. `stockCheck.ts`'s per-shape and whole-board loops needed no
+further change once the store itself never contained the bad record.
+
+**The report's Sheet needed the same font fix M2 made for the popover.**
+Base UI's `Dialog` (shadcn's `Sheet`) portals to `<body>` by default, same as
+`Popover`/`Tooltip` — the Stock check report rendered in the browser's serif
+fallback until `[data-slot="sheet-content"]` joined the existing narrowly-
+scoped rule in `app.css` (never `body` itself, never present during the
+pixel gate's captures).
+
+`npm run check` green: `tsc -b`, 86 vitest tests (5 files: the 4 already on
+`main` plus `stockEnums.test.ts`), the pixel gate (0/0/763 outside masks,
+same as M2 left it), `test:inspector` (23/23, unchanged), `test:compat`
+(12/12 — the original 8 plus the 4 new refusal/whole-board-red checks).
+
+**Aside, not this branch's to fix:** running `vitest run` from the *main
+checkout's* root (rather than from inside a worktree) currently picks up
+test files from sibling worktrees too (`.worktrees/m3-theme`,
+`.worktrees/m5b-registry` both exist right now) — vitest's default test glob
+crawls the filesystem, not git, and `.gitignore` doesn't constrain it. Noted
+here because it produced a startling 353-test run while sanity-checking this
+entry's numbers against main; every number actually reported above is from
+running `npm run check` inside `.worktrees/m4-compat` only.
