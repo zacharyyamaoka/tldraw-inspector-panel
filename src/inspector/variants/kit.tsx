@@ -52,9 +52,19 @@ export const panelIconButtonBase =
 	'text-[var(--v-muted)] outline-none hover:bg-[var(--v-hover)] hover:text-[var(--v-surface)] ' +
 	'focus-visible:border-[var(--v-focus)]'
 export const segmentRootClass = 'inline-flex items-center gap-0.5 rounded bg-[var(--v-field)] p-0.5 hover:bg-[var(--v-field-hover)]'
+// WHY `whitespace-nowrap overflow-hidden text-ellipsis`: a row like Fill
+// style (6 options — none/semi/solid/pattern/fill/lined-fill) or Line style
+// (5) has no spare width per item at a 280px dock. Without this, a long
+// label ("lined fill") wraps onto a second line the item's own `h-[22px]`
+// then clips vertically — measured in the gallery capture: it rendered as
+// "ined fill", the wrapped first line's descenders sliced off by the fixed
+// height. Truncating with an ellipsis is what open-pencil's own
+// `min-w-0` (segmented-control.ts) implies but this port had not yet made
+// explicit — a single line that shortens honestly instead of a silent
+// two-line garble.
 export const segmentItemClass =
-	'flex h-[22px] min-w-0 flex-1 cursor-pointer items-center justify-center gap-1 rounded-sm px-1.5 text-[11px] ' +
-	'text-[var(--v-muted)] outline-none hover:bg-[var(--v-hover)] hover:text-[var(--v-surface)] ' +
+	'flex h-[22px] min-w-0 flex-1 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-sm px-1.5 text-[11px] whitespace-nowrap ' +
+	'text-ellipsis text-[var(--v-muted)] outline-none hover:bg-[var(--v-hover)] hover:text-[var(--v-surface)] ' +
 	'focus-visible:ring-1 focus-visible:ring-[var(--v-focus)] ' +
 	'data-[state=on]:bg-[var(--v-hover)] data-[state=on]:text-[var(--v-surface)]'
 export const sectionRootClass = 'border-b border-[var(--v-border)] px-3 pb-3'
@@ -190,8 +200,13 @@ export function SegmentedControl({
 	testIdPrefix: string
 	ariaLabel: string
 }) {
+	// WHY no `flex-wrap` here (unlike the pre-kit.tsx ToggleGroup this
+	// replaces): with the truncation fix above, a wide row (Fill style, Line
+	// style) shrinks its own labels instead of spilling onto a second line —
+	// one row, same height as every other segmented control, matching
+	// open-pencil's own single-row convention.
 	return (
-		<div role="radiogroup" aria-label={ariaLabel} className={cn(segmentRootClass, 'w-full flex-wrap')}>
+		<div role="radiogroup" aria-label={ariaLabel} className={cn(segmentRootClass, 'w-full')}>
 			{items.map((item) => (
 				<button
 					key={item.value}

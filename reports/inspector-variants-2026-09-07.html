@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inspector variants — Verbatim, Canvas-native, Inline</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f7f7f8; --fg:#1f2328; --muted:#6b7280; --card:#fff; --border:#e2e4e8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17181a; --fg:#f0f0f0; --muted:#9aa0a6; --card:#202124; --border:#33353a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  header { padding: 32px 24px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lede { color: var(--muted); max-width: 760px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 8px 24px 64px; }
+  section.variant { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); }
+  h2 { font-size: 18px; margin: 0 0 4px; }
+  .tagline { color: var(--muted); margin: 0 0 16px; }
+  .row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+  figure { margin: 0; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+  figure img { width: 100%; display: block; border-radius: 4px; background: #fff; }
+  figure.closeup img { background: transparent; }
+  figcaption { font-size: 11px; color: var(--muted); margin-top: 6px; text-align: center; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .compare figure img { max-height: 480px; object-fit: contain; }
+  .deviations { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin-top: 32px; }
+  .deviations h2 { margin-top: 0; }
+  .deviations li { margin-bottom: 8px; }
+  code { background: rgba(127,127,127,0.15); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Inspector variants — three visual directions</h1>
+  <p class="lede">Zach rejected the shipped panel outright ("don't like these large buttons — more closely match the open pencil UX/UI"). These three variants share one skeleton (<code>src/inspector/variants/kit.tsx</code>) and two mandatory behaviours (drag-to-resize, whole-field scrub) and differ on theme + a few layout decisions. Full rationale and every deviation from the measured open-pencil reference: <code>docs/log.md</code>'s "Three inspector variants" entry. Screenshots below are from the real built app, driven headlessly — never a mock.</p>
+</header>
+<main>
+  <section class="deviations">
+    <h2>What changed vs. the rejected panel</h2>
+    <div class="compare">
+      <figure><img src="media/inspector-variants/baseline-rejected-panel.png" alt="the panel before this branch, captured from commit 06bf557"><figcaption>Before (commit 06bf557) — shadcn ToggleGroup buttons, swatch+popover colour rows, fixed 280px, glyph-only scrub</figcaption></figure>
+      <figure><img src="media/inspector-variants/v1-light-rect-280.png" alt="V1 Verbatim, light, rectangle"><figcaption>After — V1 "Verbatim": 22px segmented controls, list-row colours, resizable, whole-field scrub</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="variant">
+    <h2>V1 — Verbatim</h2>
+    <p class="tagline">Open-pencil's own palette and geometry, ported literally — captions above fields, text segments for fill/dash/size/font, icon segments for align.</p>
+    <div class="row">
+      <figure><img src="media/inspector-variants/v1-light-rect-280.png" alt="V1 light, rectangle, 280px" loading="lazy"><figcaption>light · rectangle · 280px</figcaption></figure>
+      <figure><img src="media/inspector-variants/v1-light-note-280.png" alt="V1 light, note, 280px" loading="lazy"><figcaption>light · note · 280px</figcaption></figure>
+      <figure><img src="media/inspector-variants/v1-dark-rect-280.png" alt="V1 dark, rectangle, 280px" loading="lazy"><figcaption>dark · rectangle · 280px</figcaption></figure>
+      <figure><img src="media/inspector-variants/v1-dark-note-280.png" alt="V1 dark, note, 280px" loading="lazy"><figcaption>dark · note · 280px</figcaption></figure>
+    </div>
+    <div class="row">
+      <figure><img src="media/inspector-variants/v1-light-rect-240.png" alt="V1 light, rectangle, 240px" loading="lazy"><figcaption>light · rectangle · 240px (floor width)</figcaption></figure>
+      <figure><img src="media/inspector-variants/v1-light-note-240.png" alt="V1 light, note, 240px" loading="lazy"><figcaption>light · note · 240px (floor width)</figcaption></figure>
+      <figure class="closeup"><img src="media/inspector-variants/v1-scrub-closeup.png" alt="V1 scrub close-up" loading="lazy"><figcaption>whole-field scrub — dragging the MIDDLE of W (synthetic cursor marker; headless capture has no OS pointer)</figcaption></figure>
+      <figure class="closeup"><img src="media/inspector-variants/v1-segment-closeup.png" alt="V1 segmented control close-up" loading="lazy"><figcaption>the segmented control (Align) — the "large buttons" this replaces</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="variant">
+    <h2>V2 — Canvas-native</h2>
+    <p class="tagline">tldraw's own palette (--tl-color-* tokens) and icon set, identical geometry to Verbatim — the panel reads like tldraw drew it.</p>
+    <div class="row">
+      <figure><img src="media/inspector-variants/v2-light-rect-280.png" alt="V2 light, rectangle, 280px" loading="lazy"><figcaption>light · rectangle · 280px</figcaption></figure>
+      <figure><img src="media/inspector-variants/v2-light-note-280.png" alt="V2 light, note, 280px" loading="lazy"><figcaption>light · note · 280px</figcaption></figure>
+      <figure><img src="media/inspector-variants/v2-dark-rect-280.png" alt="V2 dark, rectangle, 280px" loading="lazy"><figcaption>dark · rectangle · 280px</figcaption></figure>
+      <figure><img src="media/inspector-variants/v2-dark-note-280.png" alt="V2 dark, note, 280px" loading="lazy"><figcaption>dark · note · 280px</figcaption></figure>
+    </div>
+    <div class="row">
+      <figure><img src="media/inspector-variants/v2-light-rect-240.png" alt="V2 light, rectangle, 240px" loading="lazy"><figcaption>light · rectangle · 240px (floor width)</figcaption></figure>
+      <figure><img src="media/inspector-variants/v2-light-note-240.png" alt="V2 light, note, 240px" loading="lazy"><figcaption>light · note · 240px (floor width)</figcaption></figure>
+      <figure class="closeup"><img src="media/inspector-variants/v2-scrub-closeup.png" alt="V2 scrub close-up" loading="lazy"><figcaption>whole-field scrub — dragging the MIDDLE of W (synthetic cursor marker; headless capture has no OS pointer)</figcaption></figure>
+      <figure class="closeup"><img src="media/inspector-variants/v2-segment-closeup.png" alt="V2 segmented control close-up" loading="lazy"><figcaption>the segmented control (Align) — the "large buttons" this replaces</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="variant">
+    <h2>V3 — Inline</h2>
+    <p class="tagline">Letter-prefixed fields (X/Y/W/H/°/%), Selects for wide enums (font, fill, dash) — the densest of the three.</p>
+    <div class="row">
+      <figure><img src="media/inspector-variants/v3-light-rect-280.png" alt="V3 light, rectangle, 280px" loading="lazy"><figcaption>light · rectangle · 280px</figcaption></figure>
+      <figure><img src="media/inspector-variants/v3-light-note-280.png" alt="V3 light, note, 280px" loading="lazy"><figcaption>light · note · 280px</figcaption></figure>
+      <figure><img src="media/inspector-variants/v3-dark-rect-280.png" alt="V3 dark, rectangle, 280px" loading="lazy"><figcaption>dark · rectangle · 280px</figcaption></figure>
+      <figure><img src="media/inspector-variants/v3-dark-note-280.png" alt="V3 dark, note, 280px" loading="lazy"><figcaption>dark · note · 280px</figcaption></figure>
+    </div>
+    <div class="row">
+      <figure><img src="media/inspector-variants/v3-light-rect-240.png" alt="V3 light, rectangle, 240px" loading="lazy"><figcaption>light · rectangle · 240px (floor width)</figcaption></figure>
+      <figure><img src="media/inspector-variants/v3-light-note-240.png" alt="V3 light, note, 240px" loading="lazy"><figcaption>light · note · 240px (floor width)</figcaption></figure>
+      <figure class="closeup"><img src="media/inspector-variants/v3-scrub-closeup.png" alt="V3 scrub close-up" loading="lazy"><figcaption>whole-field scrub — dragging the MIDDLE of W (synthetic cursor marker; headless capture has no OS pointer)</figcaption></figure>
+      <figure class="closeup"><img src="media/inspector-variants/v3-segment-closeup.png" alt="V3 segmented control close-up" loading="lazy"><figcaption>the segmented control (Align) — the "large buttons" this replaces</figcaption></figure>
+    </div>
+  </section>
+  <section class="deviations">
+    <h2>Deliberately not built (this pass)</h2>
+    <ul>
+      <li>A <code>+</code>/"add a fill" affordance open-pencil's own screenshots show — this app's fill/stroke are always-present StyleProps, never addable/removable, so the control would govern nothing real.</li>
+      <li>Per-row "eye" visibility toggles — no model-side "hide this style" concept exists to wire one to.</li>
+      <li><code>ThemePanel.tsx</code>'s own controls (the light/dark ToggleGroup, colour-section headers) rebuilt onto <code>kit.tsx</code>'s <code>SegmentedControl</code>/<code>Section</code> — its palette already re-themes automatically (same token cascade), the controls themselves were lower priority than the Inspect tab Zach actually named.</li>
+      <li>The full shape × width × mode cross-product in this gallery — dark mode is shown at 280px only, not also at 240px, to keep the gallery to a legible size; the 240px no-clip guarantee itself is proven for every combination by <code>tests/inspector_smoke.mjs</code>, not by this gallery.</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>
