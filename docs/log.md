@@ -1,5 +1,187 @@
 # Log
 
+## 2026-09-07 — Round two: Figma rows, Icon strips, Summary accordions
+
+Zach's verdict on round 1: "generally I want the inspector panel to be more
+compact… Aim to match the compactness of figma. Please make your 3 variants
+more orthogonal — the 3 you made last time were very similar." Round 2 is
+three NEW variants — V4/V5/V6, `?variant=4|5|6` — built on `.worktrees/variants-r2`
+(branch `variants-r2`, cut from `main`@1a23123, round 1's own fixes already
+in). Round 1 stays reachable at `?variant=1|2|3`; the app's own default
+moves to 4 (`variants/theme.ts`'s `DEFAULT_VARIANT`).
+
+**Two new files carry the whole round**: `src/inspector/variants/figmaKit.tsx`
+(shared atoms every variant composes differently — `ColorPickerPopover`,
+`EyeToggle`/`MinusButton`, `WeightSelect`/`WeightWordSelect`, `DashSelect`,
+`GeometrySelect`, `SegmentedIconRow`, `MorePopover`/`CornerPopover`,
+`AnatomySection`/`Line` — the `[data-section]`/`[data-line]` markers the
+proof reads) and `figmaVariants.tsx` (the three compositions, plus the
+shared `positionLines`/`appearanceLine`/`geometryLine`/`fillLines`/
+`strokeLines`/`textLines` builders V4 and V6's expanded accordion body both
+call). `inspectorModel.ts` is untouched — every row below is a real
+`FieldSpec` id already in the model; V4/V5/V6 read `model.groups` into a
+`Map<id, InspectorControl>` (`controlsById`) and place specific ids on
+specific lines, rather than iterating `model.groups` the way round 1's
+`GroupSection` does. A row the model doesn't offer for the selected shape is
+absent from its line, never a hole in a fixed layout — same "a control that
+does nothing is a lie" rule round 1 already lived by.
+
+### The mapping table (Figma element → tldraw prop), as built
+
+| Figma line | tldraw control(s) | notes |
+|---|---|---|
+| Fill: swatch/name/alpha/eye/minus | `fillColor` (exact, paint) else `color` (named, style) resolved through the live theme at `fill`'s own style role; `fillOpacity` (paint, own scrub, not hex8-derived); eye = `fill` StyleProp `'none'` toggle, restores `lastFillStyleRef` (default `solid`); minus clears `fillColor`+`fillOpacity` | swatch/alpha logic in `effectiveColorReading`/`ColorPickerPopover` |
+| Stroke line 1 (same anatomy) | `strokeColor` (exact) else `color` (named, `solid` role — stroke has no fill-style analogue); alpha from `strokeColor`'s own hex8 byte (`hexAlphaPercent`, round 1's own derivation — no `strokeOpacity` field exists); eye = `dash` `'none'` toggle, restores `lastDashStyleRef` (default `draw`); minus clears `strokeColor` | |
+| Stroke line 2: dash select / weight / corner popover | `dash` (`DashSelect`, tldraw's own dash icons); `size`+`strokeWidth` (`WeightSelect` — S/M/L/XL + "Exact…" reveals the px field, mirrors `strokeWidth.overridden`); `strokeRoundness` behind a `CornerPopover` (geo+`dash==='draw'` only) | |
+| Text line 1: font select + Typeface… | `font` (`CompactSelect`, tldraw's font icons) + a synthetic `Typeface…` item revealing `labelFontFamily` (paint, text) as its own line | `FontLines` |
+| Text line 2: weight + size | `labelFontWeight` (`WeightWordSelect` — drawn DISABLED, never dropped, when the shape offers no row: see below) + `labelFontSize` | |
+| Text line 3: line height / padding + "…" | `labelLineHeight` + `labelPadding`, captioned "Line height · Padding" (the caption is NOT a line — no `data-line`); `labelEdgeMargin`/`labelMinWidth`/`labelFontFamily` (V5 also folds `labelLineHeight`/`labelPadding` in here) behind `MorePopover` | |
+| Text line 4: align / valign / halo | `align` (`SegmentedIconRow`, 3 options) + `verticalAlign` (3 options) + `textOutline` (`HaloToggle`, a `Sun` icon toggle) | |
+| Text line 5: label colour (same anatomy as Fill, minus eye) | `labelColor` (exact) else `labelColorProp` (named); alpha from `labelColor`'s own hex8; minus clears `labelColor` | no eye — no style enum has a "label ink off" member to bind one to |
+| Position: XY / WH / rotate+flip+flip+lock | `x`/`y`, `w`/`h`, `rotation` + `flipX`/`flipY` (`FlipHorizontal2`/`FlipVertical2`) + `isLocked` (`Lock`/`LockOpen`) | |
+| Appearance: opacity + corner radius + "…" | `opacity` + `cornerRadius`; `scale`/`growY`/`url` behind `MorePopover` | |
+| Geometry: one Select | `geo` — `GeometrySelect`: trigger shows the current geo's own glyph (`GEO_GLYPHS` — no tldraw asset exists for this app's geometries, same as round 1) + name, popover is the icon-tile grid | |
+
+**Picker popover** (`ColorPickerPopover`, `figmaKit.tsx`): header (label +
+close, `Popover.Close` from `@base-ui/react/popover` directly — the shadcn
+wrapper has no close primitive), the fill-STYLE icon row (tldraw's own fill
+values — Figma's "Solid/Gradient/Image" row, in this engine's terms; only
+drawn when a `styleControl` is passed, i.e. Fill's own popover, since
+stroke/label have no analogous style enum), `HexAlphaColorPicker`
+(react-colorful, round 1's own choice), a hex + alpha row, and an "On this
+page" strip of the 13 named tldraw colours (+ any custom ones) — clicking
+one writes the NAMED colour and clears the exact override. Serves Fill,
+Stroke line 1 and Text line 5 alike; only Fill passes `styleControl`.
+
+**Deliberately not built**, same "inert control is a lie" rule round 1 used
+for its own `+` button: the picker's "Custom | Libraries" header tabs and
+its own `+`/"styles" grid icon — one palette, no libraries, and every real
+style-preset concept (the six fill values) is already the icon row above.
+
+### The three variants, as measured
+
+- **V4 "Figma rows"** (`?variant=4`, new default) — every section above,
+  always visible, no collapse. Measured on the seeded rectangle, BEFORE any
+  interaction: Position 3, Appearance 1, Geometry 1, Fill 1, Stroke 2, Text
+  5 — **13 total, exactly Zach's own target**.
+- **V5 "Icon strips"** (`?variant=5`) — Position collapses to two lines (a
+  4-up X/Y/W/H strip, then rotate/flip/flip/lock/opacity); Appearance and
+  Geometry MERGE into one line (`geo` select + corner radius + "…"); Fill
+  and Stroke each stay one line (Stroke's own line drops `strokeRoundness` —
+  the brief's own literal element list for V5 never names it; still
+  reachable in V4/V6); Text becomes two lines (font/size/**B** toggle/halo/"…",
+  then align/valign/label swatch+hex). Measured: **7 lines total** (target
+  <= 8). The **B** toggle is a real simplification, not a second field: it
+  reads/writes the same `labelFontWeight` StyleProp as V4/V6's full S6-rung
+  Select, collapsed to bold (>= 600) vs. regular.
+- **V6 "Summary accordions"** (`?variant=6`) — every section starts CLOSED,
+  one line each: a title plus right-aligned value chips read straight off
+  the same `InspectorControl` the expanded body reads (`fillSummary`/
+  `strokeSummary`/`textSummary`/`positionSummary`/`appearanceSummary`/
+  `geometrySummary`) — never a second copy of state, so an
+  `editor.updateShapes` call from OUTSIDE the row (verified in the journey)
+  repaints the chip. Measured on load: **6 lines closed**, exactly the
+  target. Clicking a header opens exactly that section (an accordion — any
+  other open section closes); "Expand all" opens every section at once
+  without closing the accordion model (`Collapsible`s stay individually
+  controlled, just all `open`). The summary trigger stays mounted, chips and
+  all, while its own section is open — an expanded section reads as
+  "chips, then the real rows," not a swap.
+
+### Deviations, and why
+
+- **`labelFontWeight`'s Select is drawn DISABLED rather than dropped** on a
+  shape with no weight row (every shape but `text`) — this round's own
+  coordinator brief says so explicitly ("show disabled when the shape has
+  no weight row"), a named exception to the model's usual "a control that
+  does nothing is a lie" rule, not a lapse of it. `WeightWordSelect`'s own
+  header says so.
+- **The Fill/Stroke/Label alpha field was `w-14` in round 1's own `ColorRow`
+  and got typed `w-12` here at first** — 48px was too narrow for "100 %" at
+  11px, and it silently clipped to "10 %", a real truthful-rendering bug
+  caught by LOOKING at the rendered gallery screenshot, not by any
+  automated check (none of the line-count/behaviour checks assert a
+  field's OWN text isn't clipped, only that rows don't overflow the dock).
+  Fixed to `w-14` everywhere (6 call sites, `figmaKit.tsx`+`figmaVariants.tsx`),
+  matching round 1's own measured width.
+- **V5 drops `strokeRoundness`** — see above.
+- **V6's accordion starts with every section closed**, not one pre-opened —
+  an earlier draft defaulted Fill open (matching "one section open at a
+  time" read as a starting state); re-read against the brief's own "Target
+  6 lines closed," which only holds if the FRESH load has nothing open.
+  "One section open at a time" describes the INTERACTION (an accordion),
+  not a default.
+
+### Coordinator add-on, mid-round: stock/inspector panel switch
+
+Zach, via the coordinator, mid-task: "a button at the top of the dock that
+switches back to tldraw's STOCK style panel for editing primitives, and,
+while the stock panel is showing, a small button that switches back to the
+inspector… this is exactly what the lab is for." New file
+`src/inspector/variants/panelMode.ts` (`readPanelMode`/`writePanelMode`,
+the same read-once/skip-under-`?seed=` contract as `getVariant`/
+`readStoredDockWidth`, except `?panel=` on the URL always wins over
+localStorage — load-bearing for the pixel gate's own `?panel=stock` run).
+`Inspector.tsx`'s `mode === 'stock'` branch renders `<DefaultStylePanel
+{...props} />` completely unmediated (no wrapper of this file's own), so
+tldraw's own `Layout` wraps it exactly as a true stock deployment would.
+
+**The "Inspector" pill only renders once a shape is selected** — gated on
+`editor.getSelectedShapeIds().length > 0` — because the pixel gate's own
+`?panel=stock` comparison is against the EMPTY board, where the pill would
+otherwise paint pixels bare.html never does. Positioned `position: fixed`
+(not `absolute`), measured off `.tlui-style-panel__wrapper`'s own
+`getBoundingClientRect()` via a `ResizeObserver` — `board/mount.tsx`'s own
+`<div style={{position:'fixed',inset:0}}>` already makes `.tl-container`
+fill the viewport, so a fixed pill anchored to the panel's measured bottom
+edge reads identically to "absolute, inside `.tl-container`" without this
+file needing to establish a containing block on an ancestor it doesn't own.
+
+**A real, unplanned finding**: `tests/stock_pixels.mjs`'s new
+`?seed=stock&panel=stock` vs. `bare.html` comparison, run with NO mask,
+measured **16,850 changed px**, not zero — not a bug in the switch. `bare.html`'s
+own board (no selection) already shows a real `.tlui-style-panel__wrapper`
+(the current tool's own style — stock tldraw's real behaviour). Every OTHER
+board/panel comparison in this file never has to mask that, because
+`index.html`'s normal (non-stock) `StylePanel` slot is `Inspector`'s own
+`position: absolute; right:0; top:0; bottom:0` dock (M2's own load-bearing
+choice) — wide and tall enough to already fully cover wherever bare's real
+panel sits, so `fromBare.stylePanel` was riding inside the `inspector` mask
+by geometric accident, never needing its own entry. `?panel=stock` renders
+`DefaultStylePanel` UNMEDIATED and in NORMAL FLOW — the one state where
+that accident doesn't apply, and where `App.tsx`'s own `SharePanel:
+StockCheckButton` (mounted unconditionally since M4, outside this branch's
+ownership — `src/App.tsx`/`src/compat/StockCheckButton.tsx` were not
+touched) becomes a real flow SIBLING above it, pushing the whole panel down
+by the button's own height. The fix is the union of both captures' own
+measured `.tlui-style-panel__wrapper` rects (padded 8px for
+`--tl-shadow-2`'s own blur bleed past the element's box) — 100% DOM-derived,
+never hard-coded, and it brings the check to a real 0 changed px. Documented
+here rather than silently widening the mask, because "no mask at all" as
+literally asked is architecturally impossible while `SharePanel` stays
+unconditional — a fact about M4, not about this switch.
+
+**Journeys**: `tests/inspector_smoke.mjs` adds `runFigmaAnatomyChecks`
+(line counts per section against the targets above, whole-field scrub,
+click-to-edit, ink at V4/V5/V6's own `inspector-figmaseg-*` testids, no
+clipping at 240px, the eye/minus/default-swatch/weight semantic checks, and
+V6's live-chip-update proof) for each of 4/5/6, and
+`runStockPanelSwitchChecks` (header button → stock panel present, dock
+gone, the STOCK panel's own colour button writes `props.color`, the pill
+switches back, persistence across a non-seed reload, a `?seed=` reload
+ignoring the persisted mode) once. 167 inspector-smoke checks total, up
+from 159 (round 1's own 81 unchanged, `+78` for round 2 across three
+variants, `+8` for the switch). `npm run check`: `tsc -b` clean, 124 vitest
+tests (unchanged — this round added no unit-tested module), the pixel gate
+4/4 (0/0/763 masked on the round-1 pair, 0/0 on the new `?panel=stock` pair),
+`test:compat` 14/14, `test:theme` 12/12.
+
+**Gallery**: `docs/build_variants_gallery.mjs` gets a "Round two" section —
+V4/V5/V6 × light/dark × rectangle/note at 280px, V4's picker popover open,
+V6's Fill section expanded, and a measured-line-count table (per section,
+V4/V5/V6 side by side) beside Zach's own Figma numbers. Regenerated
+`reports/inspector-variants-2026-09-07.html`.
+
 ## 2026-09-07 — Three inspector variants (Verbatim, Canvas-native, Inline)
 
 Zach's own words on the panel M2-M5b built: "Don't like how this inspector

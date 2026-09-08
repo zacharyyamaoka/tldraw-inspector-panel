@@ -169,7 +169,8 @@ measured and printed rather than assumed. Screenshots land in
 |---|---|
 | `?seed=stock` | seeds the nine-shape probe board (fixed shape ids) instead of loading the persisted board, and skips `persistenceKey` entirely so the run never touches, or creates, real IndexedDB state |
 | `?preflight=1` | (`index.html` only) dynamically imports `tailwindcss/preflight.css` — exists solely so the pixel gate's mutation check has something real to catch; never loads on a normal visit |
-| `?variant=1\|2\|3` | (branch `variants`, not on `main`) which inspector theme+layout the dock draws — 1 "Verbatim" (default), 2 "Canvas-native", 3 "Inline"; see `docs/log.md`'s variants entry. Read once at startup like every switch above; a 22px three-segment picker in the dock's own tab bar reloads to flip it live. |
+| `?variant=1\|2\|3\|4\|5\|6` | (branch `variants-r2`, not on `main`) which inspector theme+layout the dock draws — round 1: 1 "Verbatim", 2 "Canvas-native", 3 "Inline"; round 2 (default, 4): 4 "Figma rows", 5 "Icon strips", 6 "Summary accordions". See `docs/log.md`'s variants entries. Read once at startup like every switch above; a "1 2 3 · 4 5 6" picker in the dock's own tab bar reloads to flip it live. |
+| `?panel=inspector\|stock` | which panel the `StylePanel` slot draws — the Figma dock (default) or tldraw's own `DefaultStylePanel`, unmediated. Flips live via a header button (dock) / a pill (stock panel), persisted to `localStorage` (skipped under `?seed=`, same rule as everything else in this table). See `docs/log.md`'s "stock/inspector panel switch" entry. |
 
 Every mount exposes `window.__lab = { editor, ready: true }` once tldraw is
 mounted (and seeded, if `?seed=` was present) — that's what tests wait on.
@@ -199,6 +200,48 @@ Two behaviours are mandatory in every variant, regardless of theme:
 `tests/inspector_smoke.mjs` proves both, plus explicit ink and no clipping
 at the 240px floor, against fresh pages for `?variant=1`, `2` and `3` (81/81
 checks total, up from 33).
+
+## Round two: Figma rows, Icon strips, Summary accordions (branch `variants-r2`)
+
+Zach's verdict on round 1: "generally I want the inspector panel to be more
+compact… Aim to match the compactness of figma. Please make your 3 variants
+more orthogonal — the 3 you made last time were very similar." Round 2 is
+three NEW variants (round 1 stays reachable at `?variant=1|2|3`), all
+sharing round 1's open-pencil palette but rendering through a completely
+different tree — `src/inspector/variants/figmaKit.tsx` (shared atoms:
+colour picker popover, eye/minus, weight select, geometry select, …) and
+`figmaVariants.tsx` (the three compositions) — keyed literally on the Figma
+anatomy Zach screenshotted (Position/Appearance/Geometry/Fill/Stroke/Text),
+never on `inspectorModel.ts`, which is untouched.
+
+- **V4 "Figma rows"** (new default, `?variant=4`) — the anatomy as
+  always-visible sections, one row per Figma line. Measured 13 lines on a
+  stock rectangle, exactly Zach's own target (Position 3 · Appearance 1 ·
+  Geometry 1 · Fill 1 · Stroke 2 · Text 5).
+- **V5 "Icon strips"** (`?variant=5`) — every section a single dense strip
+  of icon buttons and mini fields; measured 7 lines total (target <= 8).
+- **V6 "Summary accordions"** (`?variant=6`) — every section collapses to
+  one title + value-chip summary line by default; measured 6 lines closed
+  (target <= 6), an accordion (opening one section closes any other) with an
+  "Expand all" escape hatch. Summary chips read the live model — no second
+  copy of the state — so an editor-driven change repaints them without a
+  click.
+
+A coordinator add-on mid-round added a stock/inspector panel switch: a
+header button (all variants) swaps the dock for tldraw's own
+`DefaultStylePanel`, unmediated, and a pill swaps back once a shape is
+selected. `tests/stock_pixels.mjs` proves the switched-in stock panel is
+pixel-identical to `bare.html`'s own (masked only by the two captures' own
+measured `.tlui-style-panel__wrapper` rects — see that test's own WHY for
+why a truly empty mask isn't achievable while `App.tsx`'s `SharePanel`
+stays mounted unconditionally).
+
+Full mapping table (Figma element -> tldraw prop), measured line counts,
+every deviation: `docs/log.md`'s round-2 entry. Gallery:
+`reports/inspector-variants-2026-09-07.html`, "Round two" section.
+`tests/inspector_smoke.mjs` adds 4/5/6's own line-count, scrub/edit, ink,
+resize and semantic checks (167 checks total, up from 159), plus the stock
+panel switch (8 checks).
 
 ## Three entries
 
