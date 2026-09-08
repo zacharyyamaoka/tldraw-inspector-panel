@@ -12,6 +12,7 @@
 // This route carries the full chrome stack (Tailwind/shadcn/Base UI) so the
 // Inspector renders with its real styling; only `shapeUtils` is left unset.
 import 'tldraw/tldraw.css'
+import './styles/host.css'
 import './styles/app.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'

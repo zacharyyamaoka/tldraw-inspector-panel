@@ -1,5 +1,6 @@
 import { Board, readSeedMode } from './board/mount'
 import { CONFIGURED_SHAPE_UTILS } from './inspector/configuredUtils'
+import { LabMainMenu } from './chrome/LabMainMenu'
 import { Inspector } from './inspector/Inspector'
 import { readStoredThemes } from './inspector/themeStorage'
 
@@ -39,7 +40,7 @@ export default function App() {
   const seedMode = readSeedMode()
   return (
     <Board
-      components={{ StylePanel: Inspector }}
+      components={{ StylePanel: Inspector, MainMenu: LabMainMenu }}
       shapeUtils={CONFIGURED_SHAPE_UTILS}
       themes={seedMode ? undefined : readStoredThemes()}
     />

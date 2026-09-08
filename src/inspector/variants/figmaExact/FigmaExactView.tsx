@@ -23,10 +23,26 @@ import { FigmaExactPanel } from './FigmaExactPanel'
  * `props.geo` ("rectangle", "ellipse", …). Figma would print that inner name,
  * so this does too — Title Case, its own convention.
  */
+/**
+ * The panel's own heading — and, when it applies, the honest warning attached
+ * to it.
+ *
+ * WHY a shape carrying overrides says so, in Zach's own words: "when you add
+ * meta data to make it render I do think it makes sense to say
+ * non-stock-rectangle or something so its clear to us." The record IS still a
+ * stock rectangle — that is the whole architecture, and what lets a board open
+ * in plain tldraw — but what he is LOOKING at is not what plain tldraw would
+ * paint. Naming that at the top of the panel is the difference between a
+ * deliberate trade-off and a nasty surprise when a board is opened elsewhere.
+ * The Stock check button beside it is the detail view; this is the flag.
+ */
 function nodeTypeLabel(model: PrimitiveInspectorModel): string {
-	if (model.shapeIds.length > 1) return `${model.shapeIds.length} layers`
+	if (model.shapeIds.length > 1) {
+		return `${model.shapeIds.length} layers${model.hasOverrides ? ' · non-stock' : ''}`
+	}
 	const raw = model.title || 'Layer'
-	return raw.charAt(0).toUpperCase() + raw.slice(1)
+	const name = raw.charAt(0).toUpperCase() + raw.slice(1)
+	return model.hasOverrides ? `Non-stock ${name.toLowerCase()}` : name
 }
 
 export function FigmaExactView({ model, editor, onChange, onClear }: {

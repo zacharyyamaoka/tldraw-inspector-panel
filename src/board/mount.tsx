@@ -1,6 +1,7 @@
 import { getAssetUrlsByImport } from '@tldraw/assets/imports.vite'
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { Tldraw, type Editor, type TLAnyShapeUtilConstructor, type TLComponents, type TLThemes } from 'tldraw'
+import { useGestures } from '../chrome/useGestures'
 import { seedStockBoard } from './seed'
 
 // WHY self-hosted assets (@tldraw/assets/imports.vite) rather than tldraw's default
@@ -70,6 +71,10 @@ export interface BoardProps {
  */
 export function Board({ components, shapeUtils, themes }: BoardProps = {}) {
   const seedMode = readSeedMode()
+  // WHY held in state rather than a ref: `useGestures` is a hook and must
+  // re-run when the editor actually exists, which a ref cannot signal.
+  const [editor, setEditor] = useState<Editor | null>(null)
+  useGestures(editor)
 
   const handleMount = useCallback(
     (editor: Editor) => {
@@ -77,6 +82,7 @@ export function Board({ components, shapeUtils, themes }: BoardProps = {}) {
         seedStockBoard(editor)
       }
       window.__lab = { editor, ready: true }
+      setEditor(editor)
     },
     [seedMode],
   )

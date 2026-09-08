@@ -6,6 +6,7 @@
 // against. It shares src/board/mount.tsx and src/board/seed.ts with App.tsx so the
 // two boards cannot drift apart — only the CSS import list below differs.
 import 'tldraw/tldraw.css'
+import './styles/host.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Board } from './board/mount'

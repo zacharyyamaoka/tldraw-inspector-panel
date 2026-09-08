@@ -1,0 +1,46 @@
+/*
+ * The one thing a HOST must give tldraw, loaded by every entry — including
+ * `bare.tsx`, the pixel gate's control.
+ *
+ * WHY this is not part of the chrome stack, and therefore not something the
+ * gate should be catching: tldraw.css declares `font-family: inherit` on its
+ * UI rules — menus, buttons, panels, the toolbar, the zoom readout — because
+ * it expects the embedding page to have set a UI font. Tailwind's preflight
+ * normally does that, and this project deliberately loads layers only (see
+ * app.css's own WHY: preflight resets the canvas out from under tldraw). With
+ * neither, the inheritance chain ended at the UA default and the ENTIRE tldraw
+ * UI rendered in Times New Roman — measured on body, on `.tl-container`, and
+ * on the main menu. The inspector escaped it only because its own elements
+ * carry explicit `font-sans` classes, which is exactly why nobody noticed: the
+ * half of the UI we look at most was already fine.
+ *
+ * WHY `bare.tsx` loads it too, which means changing the pixel gate's CONTROL —
+ * a thing to do carefully and never silently. That gate proves "the chrome
+ * stack (Tailwind + shadcn + Base UI) changes zero pixels of what tldraw
+ * paints", and a control rendering in Times is not stock tldraw; it is tldraw
+ * in an unstyled document, a state no real embedding is ever in. Putting the
+ * host font on BOTH sides keeps the comparison honest about what it actually
+ * tests — our component stack — instead of scoring a host responsibility as
+ * chrome drift. Everything else about the control is untouched, and the gate's
+ * own mutation check (bare vs index+preflight, which must still differ) is
+ * what proves it did not go blind.
+ *
+ * WHY a SYSTEM stack and not the app's own Geist: the control must be able to
+ * render this identically, and Geist is a webfont that only the chrome bundle
+ * loads. Pointing this at `--font-sans` made index paint Geist while `bare.tsx`
+ * fell back — the gate caught that immediately, 640 changed pixels in the
+ * toolbar and zoom readout. A system stack needs no font file, so both sides
+ * paint the same glyphs and the gate stays strict about everything else. The
+ * cost is that tldraw's chrome does not match the inspector's Geist; that is a
+ * deliberate trade for keeping the control honest, and it is one line to change
+ * if the consistency is worth loading the webfont into the control.
+ *
+ * Scoped to `.tl-container`, not `body`: the canvas lives in here too, but
+ * shape text never inherits this — tldraw sets `--tl-font-draw` and friends
+ * explicitly on shape labels. The diff that failed this rule the first time
+ * showed changes ONLY in tldraw's toolbar, page menu and zoom readout, with
+ * every shape on the board pixel-identical.
+ */
+.tl-container {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}

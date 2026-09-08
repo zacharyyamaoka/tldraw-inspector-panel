@@ -1185,6 +1185,28 @@ async function runFigmaExactChecks(cdpPort, previewPort, checklist) {
     await evaluate(page, `[...document.querySelectorAll('[data-testid="inspector-section-stroke"] label, [data-testid="inspector-section-stroke"] span')].some(n => n.textContent.trim() === 'Style')`) === true,
   )
 
+  // The non-stock flag: the heading must SAY when meta is what is doing the
+  // rendering. Zach's words: "when you add meta data to make it render I do
+  // think it makes sense to say non-stock-rectangle or something so its clear
+  // to us." Both directions, because a flag that never clears is noise.
+  {
+    const heading = async () => await evaluate(page, `document.querySelector('[data-testid="inspector-node-type"]')?.textContent?.trim()`)
+    await evaluate(page, `(() => { const ed = window.__lab.editor; const sh = ed.getShape('${RECT_ID}')
+      ed.updateShapes([{ id: sh.id, type: sh.type, meta: { ...sh.meta, primitiveOverride: null } }]) })()`)
+    await delay(200)
+    const plain = await heading()
+    await evaluate(page, `(() => { const ed = window.__lab.editor; const sh = ed.getShape('${RECT_ID}')
+      ed.updateShapes([{ id: sh.id, type: sh.type, meta: { ...sh.meta, primitiveOverride: { cornerRadius: 24 } } }]) })()`)
+    await delay(200)
+    const flagged = await heading()
+    checklist.add(`v7: a stock shape reads as itself ("${plain}")`, plain === 'Rectangle')
+    checklist.add(`v7: a meta-rendered shape says so ("${flagged}")`, flagged === 'Non-stock rectangle')
+    await evaluate(page, `(() => { const ed = window.__lab.editor; const sh = ed.getShape('${RECT_ID}')
+      ed.updateShapes([{ id: sh.id, type: sh.type, meta: { ...sh.meta, primitiveOverride: null } }]) })()`)
+    await delay(200)
+    checklist.add('v7: and the flag clears again', (await heading()) === 'Rectangle')
+  }
+
   // Every section title shares one left edge — the bug the 13 checks above
   // all passed over, found by LOOKING at the rendered panel. A collapsible
   // section's chevron must overlay the padding, Figma-style, not push its

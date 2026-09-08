@@ -18,6 +18,7 @@ import {
 	resetPrimitiveOverrides,
 	type PrimitiveInspectorModel,
 } from './inspectorModel'
+import { isStockColorValue, isStockGeoValue } from '../compat/stockEnums'
 import {
 	PRIMITIVE_OVERRIDE_META_KEY as KEY,
 	hasPrimitiveOverride,
@@ -776,4 +777,89 @@ describe('rotation writes turn each shape about its own centre', () => {
 		applyPrimitiveInspectorControl(editor, 'rotation', 45, { shapeIds: [rect.id] })
 		expect(calls.rotations).toHaveLength(1)
 	})
+})
+
+/**
+ * The architecture guard, made mechanical.
+ *
+ * Zach's rule, in his words: "We use stock primatives with all the additonal
+ * inforation in the meta data!" — with the hard constraint that "the board can
+ * run in a stock tldr whiteboard". A record therefore may only ever hold values
+ * a real, unconfigured stock tldraw validates: `props.geo` from
+ * STOCK_GEO_VALUES, `props.color`/`props.labelColor` from STOCK_COLOR_VALUES.
+ * Everything richer belongs in `meta`.
+ *
+ * WHY a sweep over EVERY control rather than one test per field: the rule is
+ * about the shape of the whole panel, and the failure it guards against is a
+ * FUTURE control added without thinking about it. Corner radius was exactly
+ * that — it wrote `geo: 'rounded-rect'` for months, and the app's own Stock
+ * check reported the record as refused by stock tldraw. This test would have
+ * failed the day that control was written.
+ */
+describe('every control keeps the record openable in stock tldraw', () => {
+	const SAMPLES: Record<string, unknown> = {
+		color: 'blue', number: 42, boolean: true, text: 'Inter', segments: 'bold', toggle: true,
+	}
+
+	for (const [label, make] of [
+		['geo', () => geo('sweep')],
+		['note', () => note('sweep')],
+		['arrow', () => arrow('sweep')],
+		['frame', () => frame('sweep')],
+	] as const) {
+		it(`${label}: no control writes a non-stock value into props`, () => {
+			const probe = getPrimitiveInspectorModel(fakeEditor([make()]).editor)
+			if (!probe) return
+			const controls = probe.groups.flatMap((group) => group.controls)
+
+			for (const control of controls) {
+				// A closed vocabulary can hide one bad member — `geo` offers 20
+				// values and exactly one of them used to be non-stock — so every
+				// option is tried, not just the first.
+				const values = control.options?.length
+					? control.options.map((option) => option.value)
+					: [SAMPLES[control.kind] ?? 1]
+
+				for (const value of values) {
+					// A FRESH shape per write, and this is the whole test.
+					//
+					// The first version reused one shape across the sweep, and it was
+					// worthless: the `geo` control runs early and leaves the shape as
+					// the LAST geo option, so by the time `cornerRadius` was applied it
+					// no longer applied to a rectangle at all and silently no-opped.
+					// Mutation-testing caught that — putting the old
+					// `props: { geo: 'rounded-rect' }` write back left the suite GREEN.
+					// A guard whose own ordering destroys the precondition of the
+					// control it most needs to check is decoration.
+					const shape = make()
+					const { editor } = fakeEditor([shape])
+					try {
+						applyPrimitiveInspectorControl(editor, control.id, value as never)
+					} catch {
+						// A control that refuses a synthetic value is fine; this test is
+						// about what a SUCCESSFUL write leaves behind, never about
+						// forcing every control to accept arbitrary input.
+						continue
+					}
+
+					const geoValue = shape.props.geo
+					if (typeof geoValue === 'string') {
+						expect(
+							isStockGeoValue(geoValue),
+							`control '${control.id}' (value ${JSON.stringify(value)}) left props.geo = '${geoValue}', which stock tldraw would refuse`,
+						).toBe(true)
+					}
+					for (const field of ['color', 'labelColor'] as const) {
+						const colorValue = shape.props[field]
+						if (typeof colorValue === 'string') {
+							expect(
+								isStockColorValue(colorValue),
+								`control '${control.id}' (value ${JSON.stringify(value)}) left props.${field} = '${colorValue}', which stock tldraw would refuse`,
+							).toBe(true)
+						}
+					}
+				}
+			}
+		})
+	}
 })
