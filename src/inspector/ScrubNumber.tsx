@@ -329,8 +329,13 @@ export function ScrubNumber({
 				// the field-level id vanished from the DOM the moment both were
 				// set), so the field's identity stays on Root and the drag-handle
 				// id below lives on a child instead.
+				// WHY `h-6` (24px), not `h-7`: Zach's own audit, item 6 — this is
+				// the row rhythm open-pencil measures the whole vertical spacing
+				// budget from (`panelFieldBase`'s own `h-6`); a 28px field was
+				// most of what made every row read ~64px tall against the
+				// reference's ~45.
 				<InputGroup
-					className={cn('h-7 cursor-ew-resize', (unset || disabled) && 'opacity-60')}
+					className={cn('h-6 cursor-ew-resize', (unset || disabled) && 'opacity-60')}
 					data-unset={unset ? 'true' : undefined}
 					onPointerDown={handlePointerDown}
 					onPointerMove={handlePointerMove}
@@ -374,7 +379,7 @@ export function ScrubNumber({
 				// slider — `:focus` is the only state that needs the override since
 				// `isEditing()`/the pointerdown guard above already hand it native
 				// click/selection behaviour the instant it has focus.
-				className="h-7 min-w-0 flex-1 cursor-ew-resize rounded-none border-0 bg-transparent px-1.5 text-sm outline-none focus:cursor-text"
+				className="h-6 min-w-0 flex-1 cursor-ew-resize rounded-none border-0 bg-transparent px-1.5 text-sm outline-none focus:cursor-text"
 				{...(draft === null ? {} : { value: draft })}
 				onChange={(event) => setDraft(event.target.value)}
 				onBlur={(event) => commitTyped(event.currentTarget.value)}

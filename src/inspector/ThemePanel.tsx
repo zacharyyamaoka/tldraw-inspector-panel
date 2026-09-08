@@ -46,6 +46,7 @@ import { isColor } from './Inspector'
 import { ScrubNumber } from './ScrubNumber'
 import { customColorName, deriveThemeColorRoles } from './themeColorDerivation'
 import { writeStoredThemes } from './themeStorage'
+import { fieldGroupLabelClass } from './variants/kit'
 
 type PaletteMode = 'light' | 'dark'
 
@@ -196,9 +197,9 @@ function NamedColorSection({
 					))}
 				</div>
 				{ROLE_GROUPS.map((group) => (
-					<div key={group.label} className="flex flex-col gap-1">
-						<p className="text-[10px] text-muted-foreground">{group.label}</p>
-						<div className="flex flex-col gap-1">
+					<div key={group.label} className="flex flex-col gap-0">
+						<p className={fieldGroupLabelClass}>{group.label}</p>
+						<div className="flex flex-col gap-1.5">
 							{group.roles.map((role) => (
 								<ThemeColorField
 									key={role}
@@ -294,8 +295,8 @@ export function ThemePanel({ editor }: { editor: Editor }) {
 				</p>
 			</header>
 			<ScrollArea className="min-h-0 flex-1">
-				<div className="flex flex-col gap-2 px-3 py-3">
-					<p className="text-[10px] text-muted-foreground">Scale</p>
+				<div className="flex flex-col gap-0 px-3 py-3">
+					<p className={fieldGroupLabelClass}>Scale</p>
 					<div className="grid grid-cols-3 gap-1.5">
 						<ScrubNumber
 							value={theme.fontSize} min={4} max={64} step={1} unit="px" glyph="type"
