@@ -16,7 +16,17 @@
  */
 import { GEO_GLYPHS } from '../glyphs'
 
-export type VariantId = 1 | 2 | 3
+// Round 2 (Zach's verdict on round 1: "very similar… aim for Figma's
+// compactness, measured in LINE COUNT per section"): 4/5/6 join 1/2/3 in the
+// same `VariantId`/`VARIANTS` table rather than a parallel one, so the dock
+// picker, the gallery and every journey keep branching on one number. 4/5/6
+// render through a completely different component tree
+// (`variants/figmaVariants.tsx`, keyed on the Figma anatomy Zach specified
+// element-by-element) — `inlinePrefixes`/`iconControlIds`/`selectThreshold`
+// below are round 1's own rendering knobs and stay meaningless for 4/5/6,
+// kept at inert defaults only so `VariantTheme` stays one shared shape for
+// the picker/gallery's name+tagline+round fields.
+export type VariantId = 1 | 2 | 3 | 4 | 5 | 6
 
 export interface VariantTheme {
 	id: VariantId
@@ -24,8 +34,12 @@ export interface VariantTheme {
 	name: string
 	/** One line, printed in the gallery and nowhere else — not UI copy. */
 	tagline: string
+	/** Which babble round this variant belongs to — what splits the dock
+	 *  picker into "1 2 3 · 4 5 6" (`VariantPicker`, kit.tsx). */
+	round: 1 | 2
 	/** Caption-above-field (V1/V2) vs. letter-prefix-inside-field (V3) for the
-	 *  geometry scalars a prefix reads naturally on (x/y/w/h/rotation/opacity). */
+	 *  geometry scalars a prefix reads naturally on (x/y/w/h/rotation/opacity).
+	 *  Round-2 variants (4/5/6) never read this — see the module comment. */
 	inlinePrefixes: boolean
 	/** Which `FieldSpec` ids draw their options from `TLDRAW_ICONS`
 	 *  (`tldrawIcons.tsx`) instead of a text label. `'all'` is V2's own
@@ -48,6 +62,7 @@ export const VARIANTS: Record<VariantId, VariantTheme> = {
 		key: 'verbatim',
 		name: 'Verbatim',
 		tagline: "Open-pencil's own palette and geometry, ported literally.",
+		round: 1,
 		inlinePrefixes: false,
 		// `fill`/`dash` joined this set in round 2 of the audit: "a text
 		// segment never truncates" — their labels (six options, one of them
@@ -64,6 +79,7 @@ export const VARIANTS: Record<VariantId, VariantTheme> = {
 		key: 'canvas-native',
 		name: 'Canvas-native',
 		tagline: "tldraw's own palette and icon set, same geometry as Verbatim.",
+		round: 1,
 		inlinePrefixes: false,
 		iconControlIds: 'all',
 		selectThreshold: Number.POSITIVE_INFINITY,
@@ -73,10 +89,59 @@ export const VARIANTS: Record<VariantId, VariantTheme> = {
 		key: 'inline',
 		name: 'Inline',
 		tagline: 'Letter-prefixed fields, Selects for wide enums — the densest of the three.',
+		round: 1,
 		inlinePrefixes: true,
 		iconControlIds: new Set(['align', 'verticalAlign', 'textAlign']),
 		selectThreshold: 4,
 	},
+	// Round 2: Zach's verdict on round 1 — "generally I want the inspector
+	// panel to be more compact… aim to match the compactness of figma…
+	// please make your 3 variants more orthogonal." All three share round 1's
+	// open-pencil palette (V1's `[data-variant]` CSS block, app.css — "round
+	// two varies STRUCTURE, not colour") and render through
+	// `variants/figmaVariants.tsx`, keyed literally on the Figma anatomy Zach
+	// screenshotted (Fill/Stroke/Text/Position/Appearance/Geometry), not on
+	// this file's own `inlinePrefixes`/`iconControlIds`/`selectThreshold`
+	// knobs — those stay at round 1's most-neutral values here, unread.
+	4: {
+		id: 4,
+		key: 'figma-rows',
+		name: 'Figma rows',
+		tagline: "The Figma anatomy as always-visible sections — one row per Figma line, nothing collapsed.",
+		round: 2,
+		inlinePrefixes: false,
+		iconControlIds: 'all',
+		selectThreshold: Number.POSITIVE_INFINITY,
+	},
+	5: {
+		id: 5,
+		key: 'icon-strips',
+		name: 'Icon strips',
+		tagline: 'Every section a single dense strip of icon buttons and mini fields — everything else behind a popover.',
+		round: 2,
+		inlinePrefixes: false,
+		iconControlIds: 'all',
+		selectThreshold: Number.POSITIVE_INFINITY,
+	},
+	6: {
+		id: 6,
+		key: 'summary-accordions',
+		name: 'Summary accordions',
+		tagline: 'Every section collapses to one summary line — a title and value chips — expanding on demand.',
+		round: 2,
+		inlinePrefixes: false,
+		iconControlIds: 'all',
+		selectThreshold: Number.POSITIVE_INFINITY,
+	},
+}
+
+/** Variants 4/5/6 render through `figmaVariants.tsx`, never the round-1
+ *  group-based `InspectorView`. One switch, read wherever `Inspector.tsx`
+ *  decides which tree to mount, so a future round 3 has exactly one place
+ *  to extend rather than an `if (variant === 4 || variant === 5 …)` at
+ *  every call site. */
+export function isFigmaAnatomyVariant(id: VariantId): id is 4 | 5 | 6 {
+	return id === 4 || id === 5 || id === 6
 }
 
 /** The letter/symbol open-pencil prints INSIDE a V3 field instead of a
@@ -87,11 +152,17 @@ export const INLINE_PREFIXES: Record<string, string> = {
 	x: 'X', y: 'Y', w: 'W', h: 'H', rotation: '°', opacity: '%',
 }
 
-const DEFAULT_VARIANT: VariantId = 1
+// Round 2: "please make your 3 variants more orthogonal" landed as three NEW
+// variants (4/5/6), not a replacement of 1/2/3 — Zach still audits all six
+// side by side. The default flips to 4 ("Figma rows") because it is the
+// round Zach actually asked for next; 1/2/3 stay reachable at `?variant=1|2|3`.
+const DEFAULT_VARIANT: VariantId = 4
 
 function clampVariant(raw: string | null): VariantId {
 	const parsed = Number(raw)
-	return parsed === 1 || parsed === 2 || parsed === 3 ? (parsed as VariantId) : DEFAULT_VARIANT
+	return parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4 || parsed === 5 || parsed === 6
+		? (parsed as VariantId)
+		: DEFAULT_VARIANT
 }
 
 /**

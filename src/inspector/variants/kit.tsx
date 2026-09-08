@@ -293,21 +293,25 @@ export function CompactSelect({
 	onChange,
 	testId,
 	ariaLabel,
+	disabled,
 }: {
 	items: SegmentedItem[]
 	value: string | undefined
 	onChange(value: string): void
 	testId: string
 	ariaLabel: string
+	/** Round 2's own WeightWordSelect: a control drawn (never dropped) for a
+	 *  shape that offers no matching row — see that component's own WHY. */
+	disabled?: boolean
 }) {
 	return (
-		<Select value={value} onValueChange={(next) => { if (next !== null) onChange(next) }}>
+		<Select value={value} onValueChange={(next) => { if (next !== null) onChange(next) }} disabled={disabled}>
 			<SelectTrigger
 				data-testid={testId}
 				aria-label={ariaLabel}
 				className={cn(panelFieldBase, 'w-full justify-between px-1.5 text-[11px] data-[size=default]:h-6')}
 			>
-				<SelectValue />
+				<SelectValue placeholder="—" />
 			</SelectTrigger>
 			<SelectContent>
 				{items.map((item) => (
@@ -479,25 +483,34 @@ export function useDockWidth(): [number, (next: number) => void] {
  * on the SAME url otherwise — `variantUrl` only replaces the one param, so a
  * `?seed=stock` journey run stays seeded across the switch.
  */
+/** Round 2: "1 2 3 · 4 5 6" — the two babble rounds stay visually grouped
+ *  (a middle divider, not a wider single row) rather than merged into one
+ *  run of six, so the picker itself keeps saying "these are two attempts",
+ *  the same fact `VARIANTS[id].round` records. */
 export function VariantPicker({ current }: { current: VariantId }) {
 	const id = useId()
+	const roundOne: VariantId[] = [1, 2, 3]
+	const roundTwo: VariantId[] = [4, 5, 6]
+	const item = (variantId: VariantId) => (
+		<a
+			key={variantId}
+			href={variantUrl(variantId)}
+			role="radio"
+			aria-checked={variantId === current}
+			title={VARIANTS[variantId].name}
+			data-testid={`inspector-variant-${variantId}`}
+			data-state={variantId === current ? 'on' : 'off'}
+			className={cn(segmentItemClass, 'no-underline')}
+			aria-describedby={id}
+		>
+			{variantId}
+		</a>
+	)
 	return (
 		<div role="radiogroup" aria-label="Inspector variant" className={cn(segmentRootClass)} data-testid="inspector-variant-picker">
-			{([1, 2, 3] as VariantId[]).map((variantId) => (
-				<a
-					key={variantId}
-					href={variantUrl(variantId)}
-					role="radio"
-					aria-checked={variantId === current}
-					title={VARIANTS[variantId].name}
-					data-testid={`inspector-variant-${variantId}`}
-					data-state={variantId === current ? 'on' : 'off'}
-					className={cn(segmentItemClass, 'no-underline')}
-					aria-describedby={id}
-				>
-					{variantId}
-				</a>
-			))}
+			{roundOne.map(item)}
+			<span aria-hidden="true" className="px-0.5 text-[10px] text-[var(--v-muted)]">·</span>
+			{roundTwo.map(item)}
 			<span id={id} className="sr-only">Reloads the dock with the chosen variant's theme and layout.</span>
 		</div>
 	)
