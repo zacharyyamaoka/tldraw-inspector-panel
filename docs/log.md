@@ -1,5 +1,47 @@
 # Log
 
+## 2026-09-07 — Onlook desktop as an input donor: read, measured, closed
+
+Onlook's right-hand styles inspector **is** public — it is the Electron desktop
+app, not the hosted product an earlier reconnaissance claimed. It lives at
+`github.com/onlook-dev/desktop` (HEAD `a3685a49` = v0.2.31, 2025-07-17), cloned
+here to `/home/bam/onlook-desktop`; in `onlook-dev/onlook` it is any tag up to
+**v0.2.29** or sha `f05a4640`, deleted by `f7a8060c` "Migrate to web version
+(#1837)" on 2025-05-14. The panel is `apps/studio/src/routes/editor/EditPanel/`
+(22 files / 3,856 lines in `StylesTab/`), driven by
+`lib/editor/styles/group.ts` — 292 lines declaring 47 `SingleStyleImpl` fields
+in 7 `CompoundStyleImpl` clusters over 4 groups.
+
+The plan report proposed mining four of its inputs. Read against what M2
+already landed, **none of them transfers**, and two are places this lab is
+ahead. Recorded so nobody re-opens it:
+
+| Onlook desktop | What this lab already has | Verdict |
+|---|---|---|
+| `single/NumberUnitInput.tsx` (167) — value + a unit `<select>` | `src/inspector/ScrubNumber.tsx` (269) on Base UI `NumberField`: expression parser, `value: number \| null` as a real mixed state, alt/shift changing granularity mid-drag, `onValueCommitted` as the one-gesture-one-undo seam, Pointer Lock with teleport. Every numeric field declares its own `unit` (`px`, `°`, `%`) in the model. | **Ahead** — porting would regress |
+| `single/ColorInput/` — hand-rolled picker (112) + row (238) + brand palette + image + popover | `ColorRow` in `Inspector.tsx`: Base UI `Popover` + `react-colorful`, plus a text field that accepts any CSS colour the engine takes (`rgba()`, `color-mix()`), where an emptied field *clears the override* instead of storing `""` | **Ahead** |
+| `single/AutoLayoutInput.tsx` (162) — Fill / Hug / Fixed / Rel | tldraw has no auto-layout; `LayoutMode` is a CSS box-model idea. The nearest props are text `autoSize` and geo `growY`, neither of which is a sizing *mode* a user picks | **Does not apply** |
+| `compound/NestedInputs.tsx` (135) — one head value expanding to four sides | No tldraw prop has per-side parts: no margin, no padding, a single `cornerRadius` rather than four. Its other half — the 2-up grid — is already the model's `paired: true` + shared `caption` (Position, Dimensions, Route) | **Does not apply** |
+| `compound/DisplayInput.tsx` (123) — head *value* decides which children render, via a hand-written `DisplayTypeMap` | Already declarative and per-field: `applies(shape)` reads sibling prop values — `bend` applies when `kind !== 'elbow'`, `elbowMidPoint` when `kind === 'elbow'` (`inspectorModel.ts:885`, `:910`) | **Solved, better factored** |
+
+Two things worth carrying out of the read:
+
+- `CompoundStyleImpl` is 14 lines — `{key, head, children}` plus one predicate —
+  and that predicate is **inverted relative to its name**:
+  `isHeadSameAsChildren` returns `!childrenValues.every(v => v === headValue)`,
+  i.e. `true` when they *differ*. If a compound row is ever wanted here, do not
+  carry the name. The one speculative tldraw use is `arrowheadStart` /
+  `arrowheadEnd` under a single "Arrowheads" head — currently unexposed, and in
+  M3's scope, not M2's.
+- The *web* app's top `editor-bar` (56 files, 5,800 lines) is still the right
+  donor for a contextual top bar. That is a different feature and not this lab.
+
+**How the first read went wrong, so it does not repeat:** the reconnaissance
+clone was `--depth 1`. A `git log -S` sweep over a single commit reports "never
+happened" for everything, which is exactly how the panel was declared to have
+never existed. The full clone is 1,640 commits and 169 tags. Never reconnoitre a
+repository's history from a shallow clone.
+
 ## 2026-09-07 — M2 view audit: five required fixes, all real bugs
 
 An independent audit of `tests/out/inspector-dock-{light,dark,stock-route}.png`
