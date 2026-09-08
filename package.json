@@ -11,7 +11,8 @@
     "test:unit": "vitest run",
     "test:pixels": "node tests/stock_pixels.mjs",
     "test:inspector": "node tests/inspector_smoke.mjs",
-    "check": "tsc -b && vitest run && node tests/stock_pixels.mjs && node tests/inspector_smoke.mjs"
+    "test:compat": "node tests/compat_smoke.mjs",
+    "check": "tsc -b && vitest run && node tests/stock_pixels.mjs && node tests/inspector_smoke.mjs && node tests/compat_smoke.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
