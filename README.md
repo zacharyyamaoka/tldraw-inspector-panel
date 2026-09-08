@@ -35,12 +35,12 @@ Zero `radix-ui` / `@radix-ui/*` anywhere in `package.json` or `src/` — every
    through its own supported seams. This milestone's whole job is proving the
    chrome stack around it (Tailwind, shadcn, Base UI) is inert — see
    `tests/stock_pixels.mjs`.
-2. **The model decides, the view draws.** Live as of M2:
-   `src/inspector/inspectorModel.ts` is 1,182 lines of plain TypeScript with
-   no React and no tldraw-flavoured JSX — 50 `FieldSpec` entries, each with
-   `applies`/`read`/`write`, answering every question of *what a shape can
-   be*. `src/inspector/Inspector.tsx` renders whatever that model hands back
-   and nothing else; it does not know what a rectangle is.
+2. **The model decides, the view draws.** Live as of M3:
+   `src/inspector/inspectorModel.ts` is plain TypeScript with no React and no
+   tldraw-flavoured JSX — 59 `FieldSpec` entries (50 in M2, +9 in M3), each
+   with `applies`/`read`/`write`, answering every question of *what a shape
+   can be*. `src/inspector/Inspector.tsx` renders whatever that model hands
+   back and nothing else; it does not know what a rectangle is.
 3. **Consumed by registry.** *(arrives in a later milestone — inspector
    panels register into a shared surface rather than being hand-wired.)*
 
@@ -59,10 +59,11 @@ drifting to another port if 5180 is taken).
 npm --prefix /home/bam/tldraw_styling_lab run check
 ```
 
-Runs `tsc -b`, the vitest suite (`theme_bridge.test.ts` plus the M2 unit
-suites below), the pixel gate (`tests/stock_pixels.mjs`), and the Inspector
-journey (`tests/inspector_smoke.mjs`) in sequence. `test:unit`, `test:pixels`
-and `test:inspector` run any one alone.
+Runs `tsc -b`, the vitest suite (`theme_bridge.test.ts` plus the M2/M3 unit
+suites below), the pixel gate (`tests/stock_pixels.mjs`), the Inspector
+journey (`tests/inspector_smoke.mjs`) and the Theme journey
+(`tests/theme_smoke.mjs`) in sequence. `test:unit`, `test:pixels`,
+`test:inspector` and `test:theme` run any one alone.
 
 **The pixel gate** builds the app, serves `dist/` on a free port, and drives
 headless Chrome (offline, self-hosted assets — no CDN dependency) through the
@@ -98,9 +99,20 @@ The table it prints names the masked area on every run.
 
 **The Inspector journey** (`tests/inspector_smoke.mjs`) drives the built app
 in headless Chrome against `index.html?seed=stock` (paint seam installed) and
-`stock.html?seed=stock` (the stock route, seam withheld) — 23 checks, every
-one read off the editor's own record or the painted SVG/computed style, never
-off the panel's own DOM alone.
+`stock.html?seed=stock` (the stock route, seam withheld) — 33 checks (23 from
+M2, 10 added in M3 for the newly-reached rows below), every one read off the
+editor's own record or the painted SVG/computed style, never off the panel's
+own DOM alone.
+
+**The Theme journey** (`tests/theme_smoke.mjs`, M3) — 12 checks: the two
+scalar rows repaint the probe rectangle's stroke width, editing a named
+colour's role repaints its stroke colour, a light-mode edit and a dark-mode
+edit of the same role stay isolated until `colorScheme` actually switches,
+Add Colour registers a new name into the live theme and survives a reload of
+the persisted (non-seeded) document, and the layer-3 floor — the SAME
+document opened on `stock.html`, which never registers the custom name — is
+measured and printed rather than assumed. Screenshots land in
+`tests/out/theme_smoke/`.
 
 ## URL switches (dev-only, read once at startup)
 
@@ -261,3 +273,162 @@ all. `tests/stock_pixels.mjs` masks the button's own DOM rect the same way it
 already masks the Inspector dock: `bare vs index` is 0/0 changed px outside
 313,380 / 331,436 masked px, and the `?preflight=1` mutation check still
 catches 763 — the same numbers M2 left the gate at.
+## Everything the canvas can render (M3)
+
+M3's brief was "expose everything the canvas can render" split into the plan's
+three styling layers — layer 2 (the renderer's display values M2 didn't yet
+reach) and layer 3 (the app-global theme, which is a document/app setting,
+never a shape's).
+
+**The census** (`src/inspector/displayValueCensus.ts` +
+`displayValueCensus.test.ts`) is the layer-2 half: every `*ShapeUtilDisplayValues`
+interface across the 12 stock ShapeUtils this app configures or leaves stock
+(geo, text, line, draw, arrow, note, highlight, frame, image, video, bookmark,
+embed), parsed straight out of `node_modules/tldraw` at test time so a tldraw
+bump fails the census before anyone notices a missing row. Re-measured at
+5.3.2: **55 reached / 17 documented / 72 total** — not the donor's 42/31/73,
+on purpose (a different tldraw version, this app's own new rows, and one real
+bug the sweep caught — see Deviations). `inspectorModel.ts` carries **59**
+`FieldSpec` entries now (50 in M2 + 9 here: `patternFillFallbackColor`,
+`labelEdgeMargin`, `labelMinWidth`, `url`, `growY`, `isPen`, `scaleX`,
+`scaleY`, `altText`).
+
+**Rows added:**
+
+- **`patternFillFallbackColor`** (geo/draw/arrow) — the flat colour tldraw's
+  own `PatternFill` paints instead of the diagonal pattern once zoomed out
+  far enough (effective zoom ≤ 0.18) that the lines would alias. Gated on
+  `fill === 'pattern'`, the only state where anything reads it.
+- **`labelEdgeMargin` / `labelMinWidth`** (geo only) — the margin between a
+  label and the shape's edge, and the minimum width `GEO_SHAPE_MIN_WIDTHS`
+  reserves for it. Both hard-coded by tldraw, both real `getDefaultDisplayValues`
+  outputs.
+- **The frame set** — `FrameShapeUtil.configure({ showColors: true })`
+  (`configuredUtils.ts`) is the stock switch that makes a frame's own colour
+  paint at all; without it, `props.color` exists on every frame record
+  (tlschema's own migration defaults it to `'black'`) but is registered only
+  as a plain validator, never a real `DefaultColorStyle` StyleProp. The
+  `color` swatch row's `applies` predicate now calls a new `styleReaches`
+  helper (`editor.styleProps[type]?.has(style)`) instead of hard-coding a
+  frame exclusion, so it reaches `showColorsFillColor`,
+  `showColorsStrokeColor` and the three heading variants once configured, and
+  correctly keeps withholding on the stock route. There is no independent
+  "heading colour" — all five are derived from the same one `color` prop, so
+  no separate rows exist for them beyond the swatch. The five `showColors:
+  false` defaults (`fillColor`, `strokeColor`, `headingFillColor`,
+  `headingStrokeColor`, `headingTextColor`) are documented unreached: with
+  `showColors` permanently on in this app, the util never selects them.
+- **`url`** — an ordinary `linkUrl` prop on six record types (geo, note,
+  image, bookmark, embed, video); one `propField`, `hasProp` decides where it
+  applies.
+- **`growY`** — read-only, disabled (geo, note): the label-overflow height
+  tldraw derives and never lets you set. New `disabled` support end to end
+  (`FieldSpec` → `InspectorControl` → `ScrubNumber`'s own `disabled` prop,
+  onto Base UI's `NumberField.Root`) — the first field that needed it, and
+  the row is still drawn rather than dropped, the same "show tldraw's own
+  number" rule the `unset`/`auto` state already followed.
+- **`isPen`** (draw, highlight) — set from pressure at draw time, editable
+  after.
+- **`scaleX` / `scaleY`** (draw, highlight) — their per-axis resize factor;
+  neither shape has `w`/`h` at all, this *is* their resize mechanism (negative
+  values flip, the same way tldraw's own resize handler writes them).
+- **`altText`** (image, video) — its own new "Media" group, since neither
+  shape's `DisplayValues` interface has anything else to expose (both are
+  empty — `crop` stays a documented, deliberately-not-built rect editor).
+
+**Deviations from the brief:**
+
+- **`noteBorderWidth`/`noteBorderColor` stay unwired**, against the brief's
+  literal list. Re-checked against 5.3.2's own `NoteShapeUtil.tsx`:
+  `hideShadows ? borderBottom(...) : boxShadow(...)` still gates the ring to
+  far-zoomed-out only. A row here would be exactly the "control that does
+  nothing is a lie" failure `inspectorModel.ts`'s own module comment already
+  names for this exact case (see its "NOT OFFERED: a sticky's ring").
+  Documented unreached in the census instead.
+- **A real bug fixed in passing, not asked for**: `arrowOverrideDisplayValues`
+  never mapped `fillColor` at all, even though the `fillColor` paint row
+  already applied to arrows (`HAS_FILL` sees their `fill` prop) — it wrote
+  real `meta`, lit the overridden dot, and painted nothing, silently, since
+  M2. Found while wiring `patternFillFallbackColor` onto the same function;
+  fixed the same way `geoOverrideDisplayValues`'s own `fillOpacity`-with-no-
+  `fillColor` case already is (`configuredUtils.ts`'s `defaultFillColorFor`,
+  generalized from `defaultGeoFillColor` and shared with arrow).
+- **The census counts a different thing than a live selection's row count.**
+  The brief asked for the census total to match "what the panel offers on a
+  rectangle+frame selection." They can't: the census counts distinct tldraw
+  *display-value keys* across 12 interfaces; a live selection's row count
+  includes every `x`/`y`/`rotation`/style/prop row too, and folds shared
+  fields across shapes. `tests/inspector_smoke.mjs` prints both numbers side
+  by side as an FYI and asserts the two shapes' rows genuinely appear
+  together, not a forced equality.
+- **`scaleX`/`scaleY` DO exist at 5.3.2** (on `draw` and `highlight`), against
+  the brief's expectation that they might not — checked directly against
+  `TLDrawShape.ts`/`TLHighlightShape.ts` rather than assumed, and wired up
+  since they're real, cheap, and currently-unreached.
+
+## The Theme tab (M3)
+
+Layer 3: the palette and typographic scalars every shape's paint resolves
+against — app-global, not a shape's, so it is a second tab
+(`src/inspector/ThemePanel.tsx`) beside Inspect, via a shadcn `Tabs` wrapper
+around both panels in `Inspector.tsx`'s dock. Mounted on both the chrome route
+and the stock route (theme editing is a generic tldraw API, not gated by
+`CONFIGURED_SHAPE_UTILS`); never on `bare.html`, which mounts no Inspector at
+all.
+
+- **Scalars** — `fontSize`, `lineHeight`, `strokeWidth`, the same
+  `ScrubNumber` the Inspect tab uses, writing through `editor.updateThemes`.
+- **Thirteen named colours**, each its own collapsible: a light/dark
+  `ToggleGroup` choosing which palette *that section* edits, a 14-swatch
+  preview strip, and a colour row per role grouped Fill (`solid`, `semi`,
+  `pattern`, `fill`, `linedFill`), Frame (`frameHeadingStroke`,
+  `frameHeadingFill`, `frameStroke`, `frameFill`, `frameText`), Note
+  (`noteFill`, `noteText`), Highlight (`highlightSrgb`, `highlightP3`). The
+  colour row itself (`ThemeColorField`) is a deliberate ~30-line duplicate of
+  `Inspector.tsx`'s `ColorRow` swatch+popover+hex-input, minus the mixed/unset
+  states a theme role never has — the two surfaces read different shapes
+  (a shared selection's paint vs. one theme's own record), and forcing them
+  through one prop contract would have cost more than the duplication does.
+- **Undo does not track this.** `ThemeManager.ts` keeps themes on a plain
+  `Atom`, never the record store `UndoManager` walks — the tab's header says
+  so, and "Reset to tldraw defaults" (`resolveThemes()`, tldraw's own
+  `DEFAULT_THEME`) is the only way back.
+- **Persistence is `localStorage`** (`src/inspector/themeStorage.ts`), read
+  by whichever entry decides to (see below), never by the document — the same
+  category boundary `persistenceKey` already draws for a `?seed=` run. `Board`
+  now takes `themes` as a third plain pass-through prop, exactly like
+  `components`/`shapeUtils`: `App.tsx` reads the persisted value on a
+  non-seeded load, `stock.tsx` deliberately never does — the whole point of
+  that route is an otherwise-completely-stock canvas, and it needs its
+  palette to actually be tldraw's own, unregistered custom names included —
+  and `bare.tsx` never touches it.
+- **Add colour**: one hex, `themeColorDerivation.ts`'s `deriveThemeColorRoles`
+  produces all 14 roles for both palettes from one small documented formula —
+  `solid`/`fill` are the picked hex; every wash role mixes toward white
+  (light) or black (dark) at a fixed ratio per role; the two text-on-a-wash
+  roles (`frameText`, `noteText`) mix the other way for contrast;
+  `highlightSrgb`/`highlightP3` both get the raw hex (no P3-gamut conversion
+  available here). Not a reconstruction of tldraw's own hand-tuned palette
+  math — documented as exactly that. Registered into both the live theme
+  (`editor.updateThemes`) and, immediately, `DefaultColorStyle`/
+  `DefaultLabelColorStyle` via `registerColorsFromThemes` — the same call
+  `TldrawEditor.tsx` makes from the `themes` *prop* at mount, run again here
+  because an imperative `editor.updateThemes` doesn't re-render that
+  component. Skipping this left the Inspect tab's swatch rows blind to a
+  colour `theme-smoke.mjs` had just added, for the rest of that session.
+- **The layer-3 floor, measured, not assumed** (`tests/theme_smoke.mjs`):
+  paint a shape with a custom colour, persist it, reload the same
+  (non-seeded) document on `stock.html` — which never registers the custom
+  name. At 5.3.2 the mount **never reaches `window.__lab.ready`**: the strict
+  `DefaultColorStyle` validator rejects the persisted enum value outright,
+  with no fallback substitution and no console error either. This is the
+  honest floor of "a board painted with this app's own theme, opened where
+  the theme isn't installed" — worse than a silent downgrade, and stated here
+  rather than discovered by someone opening a real board in stock tldraw.
+
+Two real traps this milestone paid for, both already documented at the point
+they bite: `frame`'s `color` prop existing unconditionally but not being a
+real StyleProp until `showColors` is configured (`styleReaches`'s own WHY in
+`inspectorModel.ts`), and `registerColorsFromThemes` needing a second, manual
+call after `editor.updateThemes` because the automatic one only runs from the
+`themes` React prop at mount (`ThemePanel.tsx`'s `patchTheme`).

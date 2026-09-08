@@ -1,5 +1,119 @@
 # Log
 
+## 2026-09-07 — M3: the rest of layer 2, and the Theme tab
+
+Landed the M3 brief: a re-measured display-value census
+(`src/inspector/displayValueCensus.ts` + `.test.ts`, parsing
+`node_modules/tldraw` at test time), nine new `FieldSpec` rows, and a Theme
+tab (`src/inspector/ThemePanel.tsx`) over `editor.getThemes()`/`updateThemes`.
+`npm run check` is green: `tsc -b`, 113 vitest tests (84 baseline + 29 new: 8
+added to `inspectorModel.test.ts`, 13 in the new `displayValueCensus.test.ts`,
+8 in the new `themeColorDerivation.test.ts`; the frame-colour test was
+rewritten in place, not added), the pixel gate (0/0/763, unchanged shape),
+`test:inspector` (33/33, 10 new) and `test:theme` (12/12, all new).
+
+**The census: 55 reached / 17 documented / 72 total**, at pinned tldraw
+5.3.2 — printed by `displayValueCensus.test.ts`'s own totals check, not
+hand-counted. Not the donor's 42/31/73: a different tldraw version, this
+milestone's own new rows, and one real bug the sweep caught (below). Full
+per-shape breakdown and every documented-unreached reason lives in
+`displayValueCensus.ts`'s own `DOCUMENTED` map and README's "Everything the
+canvas can render" section — not duplicated here.
+
+**Nine new rows**, taking `inspectorModel.ts` from 50 to 59 `FieldSpec`
+entries: `patternFillFallbackColor` (geo/draw/arrow, gated on `fill ===
+'pattern'`), `labelEdgeMargin`/`labelMinWidth` (geo only), the frame Colour
+swatch reaching real paint (via a new `styleReaches` helper —
+`editor.styleProps[type]?.has(style)` — replacing a hard-coded frame
+exclusion, now that `configuredUtils.ts` calls
+`FrameShapeUtil.configure({ showColors: true })`), `url` (six record types),
+`growY` (geo/note, the first `disabled` read-only row — new support threaded
+`FieldSpec` → `InspectorControl` → `ScrubNumber`'s own `disabled` prop onto
+Base UI's `NumberField.Root`), `isPen` and `scaleX`/`scaleY` (draw/highlight —
+their actual resize mechanism, since neither shape has `w`/`h`), and
+`altText` (image/video, its own new "Media" group).
+
+**A real bug fixed in passing**: `arrowOverrideDisplayValues` never mapped
+`fillColor` at all, even though the `fillColor` paint row already applied to
+arrows — it wrote real `meta`, lit the overridden dot, and painted nothing,
+silently, since M2. Found while wiring `patternFillFallbackColor` onto the
+same function; fixed by generalizing `configuredUtils.ts`'s
+`defaultGeoFillColor` into `defaultFillColorFor` and sharing it with arrow,
+the same correction `geoOverrideDisplayValues`'s own `fillOpacity`-with-no-
+`fillColor` case already needed.
+
+**Deliberately NOT wired**: `noteBorderWidth`/`noteBorderColor`, against the
+brief's literal list. Re-checked against 5.3.2's own `NoteShapeUtil.tsx` —
+`hideShadows` (only true when zoomed far out) still gates the ring — a row
+would be exactly the "control that does nothing is a lie" case
+`inspectorModel.ts`'s own "NOT OFFERED: a sticky's ring" comment already
+names. Documented unreached in the census instead of wired inert.
+
+**The census-vs-panel-row-count check, reinterpreted**: the brief asked for
+the census total to match "what the panel offers on a rectangle+frame
+selection." They measure different things by construction — the census
+counts distinct tldraw *display-value keys*, a live selection's row count
+includes every `x`/`y`/style/prop row too. `tests/inspector_smoke.mjs` prints
+both numbers (55/17/72 vs. 185 testid'd elements on a rect+frame selection)
+side by side as an FYI and asserts the two shapes' own rows appear together,
+rather than forcing a numeric equality that would either be coincidental or
+require distorting one of the two definitions to match the other.
+
+**The Theme tab** (`src/inspector/ThemePanel.tsx`) — a second shadcn `Tabs`
+tab beside Inspect, over `editor.getThemes()`/`updateThemes`/`setCurrentTheme`
+(`TLTheme { fontSize, lineHeight, strokeWidth, fonts, colors: { light, dark }
+}`, 13 named colours × 14 roles each). Scalars as `ScrubNumber` rows; each
+named colour its own collapsible with a light/dark toggle, a 14-swatch
+preview, and colour rows grouped Fill/Frame/Note/Highlight. Persisted to
+`localStorage` (`src/inspector/themeStorage.ts`) — `Board` now takes `themes`
+as a third pass-through prop exactly like `components`/`shapeUtils`, and
+`App.tsx` is the one entry that reads the persisted value on a non-seeded
+load; `stock.tsx` deliberately never does (an otherwise-completely-stock
+canvas needs its palette to actually be stock too), `bare.tsx` never touches
+it. "Reset to tldraw defaults" (`resolveThemes()`) is the only way back,
+because `ThemeManager.ts` keeps themes on a plain `Atom` outside
+`UndoManager` — the tab's header says so.
+
+**Add colour**: `src/inspector/themeColorDerivation.ts`'s
+`deriveThemeColorRoles` derives all 14 `TLDefaultColor` roles from one hex —
+`solid`/`fill` are the hex itself, every wash role mixes toward white (light)
+or black (dark) at a fixed ratio, the two text-on-a-wash roles mix the other
+way, `highlightSrgb`/`highlightP3` share the raw hex (no P3 conversion
+available here). A small, documented formula, not a reconstruction of
+tldraw's own hand-tuned palette. Registers into both the live theme AND,
+immediately, `DefaultColorStyle`/`DefaultLabelColorStyle` via a manual
+`registerColorsFromThemes(editor.getThemes())` call — the automatic one only
+fires from `TldrawEditor.tsx`'s own render, reading the `themes` REACT PROP,
+which an imperative `editor.updateThemes` call never touches. Skipping this
+left the Inspect tab's swatch rows blind to a colour just added, for the rest
+of the session — caught by `tests/theme_smoke.mjs` before it shipped that way.
+
+**The layer-3 floor, measured** (`tests/theme_smoke.mjs`): paint a shape with
+a custom colour, persist it, reload the same non-seeded document on
+`stock.html` (which never registers the custom name). At 5.3.2 the mount
+**never reaches `window.__lab.ready`** — the strict `DefaultColorStyle`
+validator rejects the persisted enum value outright, no fallback
+substitution, no console error either. Printed in the journey's own output
+rather than assumed; this is the honest floor of "a board painted with this
+app's own theme, opened where the theme isn't installed."
+
+**Deviations, and why:**
+
+- `noteBorderWidth`/`noteBorderColor` — see above.
+- The census-vs-row-count check — see above.
+- `scaleX`/`scaleY` genuinely exist at 5.3.2 (on `draw` and `highlight`),
+  against the brief's own expectation that they might not — verified
+  directly against `TLDrawShape.ts`/`TLHighlightShape.ts` rather than
+  assumed, and wired up since they're real, cheap, and were unreached.
+- `ThemeColorField` (`ThemePanel.tsx`) is a deliberate ~30-line duplicate of
+  `Inspector.tsx`'s `ColorRow`, not a shared abstraction: the two surfaces
+  read genuinely different shapes (a selection's paint vs. one theme's own
+  record) and a theme role never has `ColorRow`'s mixed/unset states: forcing
+  both through one prop contract would have cost more than the duplication.
+- `displayValueCensus.test.ts` needed `/// <reference types="node" />`
+  (file-scoped, not added to `tsconfig.app.json`'s `types`) to read
+  `node_modules` under `tsc -b` — the one file in `src/` that genuinely runs
+  under Node rather than the browser.
 ## 2026-09-07 — Onlook desktop as an input donor: read, measured, closed
 
 Onlook's right-hand styles inspector **is** public — it is the Electron desktop
