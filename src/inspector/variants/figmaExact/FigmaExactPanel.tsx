@@ -256,8 +256,8 @@ export function FigmaExactPanel({ ctx, nodeType }: { ctx: AnatomyCtx; nodeType: 
 					{nodeType}
 				</h1>
 				<div className="flex items-center gap-0.5">
-					<IconButton label="Create component" testId="inspector-create-component"><Fig.CreateComponent /></IconButton>
-					<IconButton label="Edit object" testId="inspector-edit-object"><Fig.EditObject /></IconButton>
+					<IconButton label="Create component" testId="inspector-create-component" disabled><Fig.CreateComponent /></IconButton>
+					<IconButton label="Edit object" testId="inspector-edit-object" disabled><Fig.EditObject /></IconButton>
 				</div>
 			</div>
 
@@ -461,7 +461,7 @@ export function FigmaExactPanel({ ctx, nodeType }: { ctx: AnatomyCtx; nodeType: 
 			<Section
 				title="Export"
 				className="border-b-0"
-				actions={<IconButton label="Add export settings" testId="inspector-export-add"><Fig.Plus /></IconButton>}
+				actions={<IconButton label="Add export settings" testId="inspector-export-add" disabled><Fig.Plus /></IconButton>}
 			>
 				{null}
 			</Section>

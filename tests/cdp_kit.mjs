@@ -376,6 +376,14 @@ export function makeChecklist() {
         // a clean pass in a scrollback or a handoff.
         process.stdout.write(`\n  ${knownFails.length} KNOWN FAILURE(S) — not fixed, deliberately not blocking:\n`)
         for (const k of knownFails) process.stdout.write(`    - ${k}\n`)
+        // ...and never as a clean pass to a MACHINE either. Printing alone was
+        // not enough: a round-2 judge demonstrated that a suite whose only
+        // failure was known() still exited 0, so CI — or a later agent reading
+        // only the exit status — would call it green. `known()` is allowed to
+        // stop one check from blocking the rest of the run; it is NOT allowed
+        // to turn a red suite into a green one. The distinction is the whole
+        // reason the API is defensible.
+        process.exitCode = 1
       }
       return checks.length
     },

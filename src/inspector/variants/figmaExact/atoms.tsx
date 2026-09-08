@@ -65,12 +65,21 @@ export function Section({ title, actions, children, className, collapsible }: {
 							aria-expanded={open}
 							data-testid={`inspector-section-toggle-${title.toLowerCase()}`}
 							onClick={() => setOpen((wasOpen) => !wasOpen)}
-							className="-ml-4 flex h-8 min-w-0 flex-1 items-center gap-0.5 border-0 bg-transparent pl-4 text-left outline-none"
+							className="relative -ml-4 flex h-8 min-w-0 flex-1 items-center border-0 bg-transparent pl-4 text-left outline-none"
 						>
+							{/* WHY absolute rather than a flex child: in Figma every section
+							    title shares ONE left edge, and the disclosure chevron is drawn
+							    over the panel's left padding — it does not push the title.
+							    As a flex child this 16px span indented "Fill"/"Stroke"/
+							    "Effects" past "Position"/"Layout"/"Appearance"/"Export",
+							    a misalignment visible at a glance in the rendered panel that
+							    all 13 v7 checks passed straight over. Taking it out of flow
+							    puts every title back on the same edge while the chevron still
+							    appears on hover, where Figma draws it. */}
 							<span
 								aria-hidden="true"
 								className={cn(
-									'flex size-4 shrink-0 items-center justify-center opacity-0 transition-opacity',
+									'absolute left-0 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center opacity-0 transition-opacity',
 									'group-hover/section:opacity-100 group-focus-within/section:opacity-100',
 									open && 'rotate-90',
 								)}

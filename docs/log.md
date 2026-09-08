@@ -1153,15 +1153,19 @@ the `--tl-*` properties, the `--popover` bridge. Such a popup reads `:root`'s
 light default and paints white in dark mode, permanently, with no error. It now
 falls back to `.tl-container`, which always exists and carries both.
 
-**The `--tl-*`-to-shadcn bridge was very nearly inert.** Tailwind v4's `@theme`
-emits `--color-popover: var(--popover)` into `:root`, and a custom property's
-`var()` resolves *at the element that declares it*. So `--color-popover`
-computed once against `:root`'s light `--popover`, and every descendant
-inherited that already-resolved colour. Re-pointing `--popover` further down —
-the bridge's whole job — never reached `bg-popover`, `text-muted-foreground`,
-`border` or any other utility, because utilities read the `--color-*` name.
-All 17 aliases are now re-declared in both scopes. **This is correct on its own
-merits but did NOT fix the symptom that led here** (below).
+**A wrong explanation I published and then had to retract.** I claimed the
+`--tl-*`-to-shadcn bridge was inert because Tailwind v4's `@theme` resolves
+`--color-popover: var(--popover)` at `:root`, so descendants inherit an
+already-resolved light value, and I re-declared 17 aliases in both scopes on
+that basis. **It is false for this build.** `app.css` uses `@theme inline`,
+whose entire purpose is to substitute at use time: the built rule is literally
+`.bg-popover{background-color:var(--popover)}` and `--color-*` is never
+consulted. A round-2 judge caught it. Worse, my OWN diagnostic had printed
+`paintedBy: [".bg-popover => var(--popover)"]` and I read past it, because the
+`@theme` story was more interesting than the measurement in front of me. The
+aliases are reverted. Recorded rather than deleted because the failure mode —
+preferring a satisfying mechanism to the evidence already on screen — is the
+one worth remembering.
 
 **Escape does not close the colour picker.** Base UI never moves focus into the
 popup, so its Escape handler never fires. Left unfixed — out of scope for a
@@ -1194,7 +1198,15 @@ reproduces only with the journey's accumulated page state.
 every check after it, and this one had been hiding the whole V7 block plus three
 real defects for fifteen journey runs. Deleting it would lose the finding;
 weakening it to always-true would lie. `report()` lists known failures
-separately so a suite carrying one can never read as a clean pass.
+separately AND sets a non-zero exit code — the second half added after a
+round-2 judge built a fixture proving the suite still exited 0, which would have
+let CI call it green. Printing loudly while returning success is still lying;
+`known()` may stop one check from blocking a run, never turn red into green.
+
+**The lead not yet followed:** the same judge noted the diagnostic only ever
+looked at the `background-color` longhand, and ignored the `background`
+shorthand, animation, and stale/different-element cases. That is the next thing
+to try on this.
 
 **Method note, worth more than the fixes.** Four hypotheses about this bug
 measured plausibly and were wrong (the popup covering its own trigger; a

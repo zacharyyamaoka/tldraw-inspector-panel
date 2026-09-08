@@ -1151,9 +1151,27 @@ async function runFigmaExactChecks(cdpPort, previewPort, checklist) {
 
   // Judge round 1: no enabled-looking no-ops. Every button without a tldraw
   // binding must be visibly disabled.
-  const noops = await evaluate(page, `JSON.stringify(['inspector-hide','inspector-blend','inspector-lock-aspect','inspector-individual-corners','inspector-stroke-advanced','inspector-stroke-individual','inspector-fill-styles','inspector-fill-add']
+  const noops = await evaluate(page, `JSON.stringify(['inspector-hide','inspector-blend','inspector-lock-aspect','inspector-individual-corners','inspector-stroke-advanced','inspector-stroke-individual','inspector-fill-styles','inspector-fill-add','inspector-create-component','inspector-edit-object','inspector-export-add','inspector-stroke-styles','inspector-effects-styles','inspector-effects-add']
     .filter(id => { const el = document.querySelector('[data-testid="'+id+'"]'); return el && !el.disabled }))`).then(JSON.parse)
   checklist.add(`v7: controls with no tldraw binding are disabled, not inert (${noops.length ? noops.join(', ') : 'none enabled'})`, noops.length === 0)
+
+  // Every section title shares one left edge — the bug the 13 checks above
+  // all passed over, found by LOOKING at the rendered panel. A collapsible
+  // section's chevron must overlay the padding, Figma-style, not push its
+  // title right.
+  const titleEdges = await evaluate(page, `JSON.stringify([...document.querySelectorAll('[data-testid^="inspector-section-"] h2')].map(h => ({ t: h.textContent, x: Math.round(h.getBoundingClientRect().left) })))`).then(JSON.parse)
+  const distinctEdges = [...new Set(titleEdges.map((e) => e.x))]
+  checklist.add(`v7: every section title shares one left edge (${titleEdges.map((e) => e.t + '@' + e.x).join(', ')})`, distinctEdges.length === 1)
+
+  // Escape closes the picker and leaves the drawer open. Both halves matter:
+  // Escape used to do nothing at all (Base UI never focuses the popup), and
+  // the naive fix closed the whole drawer instead.
+  await clickElement(page, '[data-testid="inspector-fillswatch"]')
+  await waitFor(page, `!!document.querySelector('[data-slot="popover-content"][data-open]')`, 'v7 picker open for the Escape check', 4000)
+  await key(page, 'Escape', 'Escape')
+  await delay(250)
+  checklist.add('v7: Escape closes the colour picker', await evaluate(page, `!document.querySelector('[data-slot="popover-content"][data-open]')`) === true)
+  checklist.add('v7: ...and leaves the drawer itself open', await evaluate(page, `!!document.querySelector('[data-testid="inspector-fillswatch"]')`) === true)
 
   // Collapsible Fill/Stroke/Effects, like Figma's own.
   await clickElement(page, '[data-testid="inspector-section-toggle-fill"]')
