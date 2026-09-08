@@ -3,7 +3,6 @@
 // build-then-serve-then-drive shape (same cdp_kit.mjs, same local-.bin vite
 // invocation, same reasons — see that file's own WHY comments for the npx/stdio
 // pitfalls this one inherits by copying the pattern).
-import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -15,7 +14,12 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..')
-const outDir = join(repoRoot, 'tests', 'out')
+// WHY its own subdirectory of tests/out, not tests/out itself: see the WHY at
+// the top of tests/stock_pixels.mjs's own `outDir` — every journey owns
+// exactly one subdirectory and clears only that one, so running this after
+// (or before) the pixel gate or the Inspector journey can never delete
+// either's captures.
+const outDir = join(repoRoot, 'tests', 'out', 'compat_smoke')
 const WIDTH = 1440
 const HEIGHT = 960
 const viteBin = join(repoRoot, 'node_modules', '.bin', 'vite')
@@ -108,30 +112,57 @@ async function main() {
 
     checks.add('exactly one .tl-container after the first run finishes (hidden editor disposed)', (await containerCount(page)) === 1)
 
-    // ---- (b) paint-override contract: only if M2's configured utils exist ----
-    const configuredUtilsPath = join(repoRoot, 'src', 'inspector', 'configuredUtils.ts')
-    if (!existsSync(configuredUtilsPath)) {
-      checks.pass(
-        `SKIPPED: paint-override row (src/inspector/configuredUtils.ts absent — M2 not landed on main as of this run; ` +
-        `writing the meta override would render on neither side and a >0 assertion here would be faked, not measured)`,
-      )
-    } else {
-      await evaluate(page, `void window.__lab.editor.updateShapes([{
-        id: '${RECT_ID}', type: 'geo',
-        meta: { systemSketchPrimitiveOverride: { fillColor: '#ff0000', fillOpacity: 1 } },
-      }])`)
-      await clickElement(page, '[data-slot="sheet-close"]')
-      await delay(300)
-      await clickElement(page, '[data-testid="stock-check-button"]')
-      await waitFor(page, `document.querySelector('[data-testid="stock-check-whole-board"]')`, 'stock check re-run report', 20000)
-      await delay(400)
+    // ---- (b) paint-override contract: src/inspector/configuredUtils.ts (M2) is
+    // on main now, so this is no longer conditional — writing the meta key really
+    // does reach real pixels through getCustomDisplayValues, on the lab side only.
+    await evaluate(page, `void window.__lab.editor.updateShapes([{
+      id: '${RECT_ID}', type: 'geo',
+      meta: { systemSketchPrimitiveOverride: { fillColor: '#ff0000', fillOpacity: 1 } },
+    }])`)
+    await clickElement(page, '[data-slot="sheet-close"]')
+    await delay(300)
+    await clickElement(page, '[data-testid="stock-check-button"]')
+    await waitFor(page, `document.querySelector('[data-testid="stock-check-whole-board"]')`, 'stock check re-run report', 20000)
+    await delay(400)
 
-      const firstRowId = await evaluate(page, `document.querySelector('[data-testid="stock-check-shape-row"]')?.dataset.shapeId`)
-      const firstRowChanged = await readInt(page, '[data-testid="stock-check-shape-row"]', 'changed')
-      checks.add(`the overridden rectangle (${RECT_ID}) sorts first`, firstRowId === RECT_ID)
-      checks.add(`the overridden rectangle has > 0 changed px (got ${firstRowChanged})`, firstRowChanged > 0)
-      await screenshot(page, 'compat-report-override.png')
-    }
+    const firstRowId = await evaluate(page, `document.querySelector('[data-testid="stock-check-shape-row"]')?.dataset.shapeId`)
+    const firstRowChanged = await readInt(page, '[data-testid="stock-check-shape-row"]', 'changed')
+    const overriddenWholeBoardChanged = await readInt(page, '[data-testid="stock-check-whole-board"]', 'changed')
+    checks.add(`the overridden rectangle (${RECT_ID}) sorts first`, firstRowId === RECT_ID)
+    checks.add(`the overridden rectangle has > 0 changed px (got ${firstRowChanged})`, firstRowChanged > 0)
+    checks.add(`the whole-board row is now > 0 too (got ${overriddenWholeBoardChanged})`, overriddenWholeBoardChanged > 0)
+    await screenshot(page, 'compat-report-override.png')
+
+    // ---- (c) the enum blind spot: a value only valid because configuredUtils.ts
+    // mutated GeoShapeGeoStyle for this whole page must still read as a real
+    // stock-tldraw refusal, per stockEnums.ts's static ground truth. Written
+    // directly via updateShapes (equivalent record to what raising the
+    // Inspector's cornerRadius field above 0 produces — inspector_smoke.mjs
+    // already exercises that UI path end to end; this journey's job is the
+    // refusal rule, not a second copy of that interaction test).
+    await clickElement(page, '[data-slot="sheet-close"]')
+    await delay(300)
+    // WHY clear the meta override first: leaving it on would ALSO force the
+    // whole-board reading red via a large pixel diff, which would make "red
+    // because of the refusal" unfalsifiable against "red because of paint".
+    // Clearing it isolates the assertion to the refusal path alone.
+    await evaluate(page, `void window.__lab.editor.updateShapes([{
+      id: '${RECT_ID}', type: 'geo',
+      meta: { systemSketchPrimitiveOverride: null },
+      props: { geo: 'systemsketch-rounded-rect' },
+    }])`)
+    await clickElement(page, '[data-testid="stock-check-button"]')
+    await waitFor(page, `document.querySelector('[data-testid="stock-check-whole-board"]')`, 'stock check refusal report', 20000)
+    await delay(400)
+
+    const refusalCount = await evaluate(page, `Number(document.querySelector('[data-testid="stock-check-refusals"]')?.dataset.count ?? 0)`)
+    checks.add(`a refusal row appears for the mutated geo enum (got ${refusalCount})`, refusalCount > 0)
+    const refusalField = await evaluate(page, `document.querySelector('[data-testid="stock-check-refusal-row"]')?.dataset.field`)
+    const refusalShapeId = await evaluate(page, `document.querySelector('[data-testid="stock-check-refusal-row"]')?.dataset.shapeId`)
+    checks.add(`the refusal row names the geo field on ${RECT_ID}`, refusalField === 'geo' && refusalShapeId === RECT_ID)
+    const wholeBoardRedOnRefusal = await evaluate(page, `document.querySelector('[data-testid="stock-check-whole-board"] span')?.className.includes('red')`)
+    checks.add('the whole-board reading is forced red when a refusal exists', wholeBoardRedOnRefusal === true)
+    await screenshot(page, 'compat-report-refusal.png')
 
     // ---- (d) leak check: closing the sheet must not leave a second .tl-container ----
     await clickElement(page, '[data-slot="sheet-close"]')
