@@ -32,6 +32,7 @@ const WIDTH = 1440
 const HEIGHT = 960
 const RECT_ID = 'shape:probe-rect'
 const ELLIPSE_ID = 'shape:probe-ellipse'
+const FRAME_ID = 'shape:probe-frame'
 const viteBin = join(repoRoot, 'node_modules', '.bin', 'vite')
 
 function run(cmd, args, opts = {}) {
@@ -358,6 +359,104 @@ async function main() {
         await delay(200)
         const lightAgain = await dockPaintVsPanelVar()
         checklist.add('switching back to light restores the light dock background', lightAgain.dock === lightValues.dock)
+      }
+
+      /* --------------------------------------------------------- M3 rows */
+      // Frame: colour swatch row exists once showColors is configured, and
+      // actually paints the frame body/heading — not just writes a prop.
+      {
+        await selectShape(page, FRAME_ID)
+        await delay(150)
+        const ids = await testIds(page)
+        checklist.add('a frame offers the Colour swatch row now that showColors is configured', ids.has('inspector-swatch-color-red'))
+        const bodyFill = () => evaluate(page, `document.querySelector('[data-shape-id="${FRAME_ID}"] .tl-frame__body')?.getAttribute('fill')`)
+        const before = await bodyFill()
+        await reveal(page, '[data-testid="inspector-swatch-color-red"]')
+        await clickElement(page, '[data-testid="inspector-swatch-color-red"]')
+        await delay(150)
+        const after = await bodyFill()
+        checklist.add('clicking the frame Colour swatch repaints the frame body (not just props.color)', after !== before)
+        const shape = await getShape(page, FRAME_ID)
+        checklist.add('the frame Colour swatch wrote the stock props.color, no meta override', shape.props.color === 'red')
+        // put it back so a later re-run of this journey starts from the seed's own colour
+        await clickElement(page, '[data-testid="inspector-swatch-color-black"]')
+        await delay(150)
+        // WHY blur here: `InspectorPanel` freezes its model reference while
+        // focus sits inside the dock AND the selection is about to change
+        // (see its own WHY) — built to survive a real user's blur-vs-select
+        // race. A `selectShape` call below is `editor.select(...)` run
+        // straight from the test script, which changes the LIVE selection
+        // but fires no real DOM blur on the swatch button this click just
+        // focused, so the panel kept showing the frame's reading through the
+        // next `selectShape` until this. A real user's next action (clicking
+        // canvas, or a field that blurs on commit) does this for free.
+        await evaluate(page, 'document.activeElement && document.activeElement.blur()')
+        await delay(80)
+      }
+
+      // patternFillFallbackColor only shows up where fill is actually 'pattern'.
+      {
+        await selectShape(page, RECT_ID) // fill: solid
+        await delay(150)
+        checklist.add('patternFillFallbackColor is absent on a solid fill', !(await testIds(page)).has('inspector-color-patternFillFallbackColor'))
+        await selectShape(page, ELLIPSE_ID) // fill: pattern
+        await delay(150)
+        checklist.add('patternFillFallbackColor appears once fill is pattern', (await testIds(page)).has('inspector-color-patternFillFallbackColor'))
+      }
+
+      // labelEdgeMargin/labelMinWidth: geo-only paint rows, round-trip into meta.
+      {
+        await selectShape(page, RECT_ID)
+        await delay(150)
+        await replaceFieldText(page, '[data-testid="inspector-number-labelEdgeMargin"]', '30')
+        await key(page, 'Enter', 'Enter')
+        await delay(150)
+        const shape = await getShape(page, RECT_ID)
+        checklist.add('labelEdgeMargin commits into the override bag', shape.meta.systemSketchPrimitiveOverride?.labelEdgeMargin === 30)
+        checklist.add('labelMinWidth row exists alongside it', (await testIds(page)).has('inspector-number-labelMinWidth'))
+        await reveal(page, '[data-testid="inspector-clear-labelEdgeMargin"]')
+        await clickElement(page, '[data-testid="inspector-clear-labelEdgeMargin"]')
+        await delay(150)
+      }
+
+      // url: an ordinary prop, round-trips on a geo.
+      {
+        await replaceFieldText(page, '[data-testid="inspector-text-url"]', 'https://example.com')
+        await key(page, 'Enter', 'Enter')
+        await delay(150)
+        const shape = await getShape(page, RECT_ID)
+        checklist.add('url round-trips on a geo', shape.props.url === 'https://example.com')
+        await replaceFieldText(page, '[data-testid="inspector-text-url"]', '')
+        await key(page, 'Enter', 'Enter')
+        await delay(150)
+      }
+
+      // growY: read-only, disabled, still drawn with tldraw's own number.
+      {
+        const disabled = await evaluate(page, `document.querySelector('[data-testid="inspector-number-growY"]')?.disabled`)
+        checklist.add('growY is drawn as a disabled, read-only field', disabled === true)
+      }
+
+      // The census (displayValueCensus.test.ts) counts distinct tldraw
+      // DISPLAY-VALUE KEYS reached across 12 shape interfaces; this counts
+      // FieldSpec ROWS a live two-shape selection offers (x/y/rotation and
+      // every style/prop row included, not just paint). They are different
+      // metrics by construction — printed side by side as an FYI, not
+      // asserted equal.
+      {
+        // See the WHY on the earlier blur — the url field above is still
+        // focused from its own commit, and a programmatic `select` fires no
+        // DOM blur to release the panel's frozen reading.
+        await evaluate(page, 'document.activeElement && document.activeElement.blur()')
+        await delay(80)
+        await evaluate(page, `void window.__lab.editor.select('${RECT_ID}', '${FRAME_ID}')`)
+        await delay(150)
+        const idsAtOnce = await testIds(page)
+        console.log(`[inspector_smoke] rect+frame selection offers ${idsAtOnce.size} testid'd elements (not the same metric as the census's reached/documented/total — see displayValueCensus.test.ts)`)
+        checklist.add(
+          'a rect+frame selection offers both the frame-only row and the geo-only rows together',
+          idsAtOnce.has('inspector-text-frameName') && idsAtOnce.has('inspector-number-labelMinWidth'),
+        )
       }
 
       // The colour popup lands in a Base UI portal appended to <body>, a
