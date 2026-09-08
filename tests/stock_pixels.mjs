@@ -24,6 +24,12 @@
 // `.tlui-style-panel__wrapper` on bare's own panel once a shape is selected)
 // rather than hard-coded, so a future dock resize cannot silently widen the
 // unchecked area without the gate's own printed "masked area" changing too.
+//
+// WHY the M4 mask: index.html's `components.SharePanel` is now
+// `StockCheckButton` (src/App.tsx) — a real control bare.html never mounts,
+// since bare passes no `components` at all (src/board/mount.tsx's WHY). Same
+// shape as the Inspector dock: differs on purpose, inside a DOM-read
+// rectangle, not a second gate.
 import { spawn } from 'node:child_process'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -117,15 +123,19 @@ function diffPngs(aPng, bPng, masks = []) {
   return { changed, diffPng: diff, maskedArea }
 }
 
-/** The two dock rects a capture might carry: the chrome route's Inspector
- *  overlay (`inspector`, always present on index.html) and bare's own stock
- *  style panel (`stylePanel`, present only once a shape with styles is
- *  selected). Either is absent — not zero-sized — where its route never draws
- *  it; `elementBox` throwing on a missing selector is what tells them apart. */
+/** The rects a capture might carry: the chrome route's Inspector overlay
+ *  (`inspector`, always present on index.html), bare's own stock style panel
+ *  (`stylePanel`, present only once a shape with styles is selected), and
+ *  M4's "Stock check" button (`stockCheckButton`, present on index.html's
+ *  SharePanel slot, absent on bare.html — see src/App.tsx's WHY for why that
+ *  slot is index-only). Each is absent — not zero-sized — where its route
+ *  never draws it; `elementBox` throwing on a missing selector is what tells
+ *  them apart. */
 async function readDockRects(page) {
   const rects = {}
   try { rects.inspector = await elementBox(page, '[data-testid="inspector"]') } catch { /* not this route */ }
   try { rects.stylePanel = await elementBox(page, '.tlui-style-panel__wrapper') } catch { /* nothing selected, or not bare */ }
+  try { rects.stockCheckButton = await elementBox(page, '[data-testid="stock-check-button"]') } catch { /* bare.html never mounts it */ }
   return rects
 }
 
@@ -178,14 +188,16 @@ async function captureAll(previewPort, offline) {
 }
 
 /** The rects to zero for one comparison: the chrome route's dock (always, it
- *  never disappears — see Inspector.tsx) plus bare's own stock panel where
- *  that capture has one (only the `panel` state; `board` has nothing selected
- *  so bare draws no panel at all, and there is nothing there to mask). */
+ *  never disappears — see Inspector.tsx) and its Stock check button (always,
+ *  same reason) plus bare's own stock panel where that capture has one (only
+ *  the `panel` state; `board` has nothing selected so bare draws no panel at
+ *  all, and there is nothing there to mask). */
 function masksFor(bareVariant, indexVariant, what) {
   const rects = []
   const fromIndex = indexVariant.rects[what] ?? {}
   const fromBare = bareVariant.rects[what] ?? {}
   if (fromIndex.inspector) rects.push(fromIndex.inspector)
+  if (fromIndex.stockCheckButton) rects.push(fromIndex.stockCheckButton)
   if (fromBare.stylePanel) rects.push(fromBare.stylePanel)
   return rects
 }
