@@ -136,6 +136,7 @@ describe('registry.json (tldraw-inspector item)', () => {
         if (specifier.startsWith('.') || specifier.startsWith('@/')) continue
         if (specifier === 'react' || specifier.startsWith('react/')) continue
         if (specifier === 'vitest') continue // test-only, not a runtime dependency the consumer installs
+        if (specifier.startsWith('node:')) continue // Node builtins in a test file (the census reads node_modules) are not installable
         const name = packageNameOf(specifier)
         if (!deps.has(name)) missing.push(`${file.path}: ${specifier}`)
       }
