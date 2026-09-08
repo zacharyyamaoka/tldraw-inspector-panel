@@ -16,10 +16,15 @@ import './styles/app.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Board } from './board/mount'
+import { StockCheckButton } from './compat/StockCheckButton'
 import { Inspector } from './inspector/Inspector'
 
+// WHY the Stock check button rides along on this route too: an
+// otherwise-completely-stock canvas is exactly where "does this board still
+// open in real stock tldraw" is most worth asking — see App.tsx's WHY for why
+// it is NOT a board/mount.tsx default.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Board components={{ StylePanel: Inspector }} />
+    <Board components={{ StylePanel: Inspector, SharePanel: StockCheckButton }} />
   </StrictMode>,
 )
