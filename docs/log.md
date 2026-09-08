@@ -1129,3 +1129,78 @@ crawls the filesystem, not git, and `.gitignore` doesn't constrain it. Noted
 here because it produced a startling 353-test run while sanity-checking this
 entry's numbers against main; every number actually reported above is from
 running `npm run check` inside `.worktrees/m4-compat` only.
+
+---
+
+## V7 "Figma exact" — what the journey found once it could actually run
+
+Zach's brief: copy Figma's ui3 Design panel for a rectangle "pixel for pixel",
+his worked example being Opacity — Figma writes the *word* and uses a specific
+transparency-checker glyph, ours did neither. All 13 `v7:` checks now pass,
+including that one; the panel's structure, metrics, icon paths and bindings are
+asserted against the real Figma DOM quoted in the `figmaExact/` file headers.
+
+Getting there surfaced four defects that had nothing to do with V7, three of
+them **masked behind a single failing check**. Recording them because the
+masking is the more important lesson.
+
+**A popup could silently leave the theme scope.** Base UI captures a portal
+target once per popup. `dockPortalContainer()` is a live query, so returning
+`null` even momentarily — dock between mounts, a theme flip re-rendering it —
+made Base UI fall back to `<body>`, which is *outside* `.tl-container` and
+therefore outside everything that themes this app: the `.tl-theme__dark` class,
+the `--tl-*` properties, the `--popover` bridge. Such a popup reads `:root`'s
+light default and paints white in dark mode, permanently, with no error. It now
+falls back to `.tl-container`, which always exists and carries both.
+
+**The `--tl-*`-to-shadcn bridge was very nearly inert.** Tailwind v4's `@theme`
+emits `--color-popover: var(--popover)` into `:root`, and a custom property's
+`var()` resolves *at the element that declares it*. So `--color-popover`
+computed once against `:root`'s light `--popover`, and every descendant
+inherited that already-resolved colour. Re-pointing `--popover` further down —
+the bridge's whole job — never reached `bg-popover`, `text-muted-foreground`,
+`border` or any other utility, because utilities read the `--color-*` name.
+All 17 aliases are now re-declared in both scopes. **This is correct on its own
+merits but did NOT fix the symptom that led here** (below).
+
+**Escape does not close the colour picker.** Base UI never moves focus into the
+popup, so its Escape handler never fires. Left unfixed — out of scope for a
+Figma-fidelity pass — but it has now caused two *test* failures by leaving the
+picker open on top of whatever the next step wanted to click, so it is worth
+fixing properly and is not merely cosmetic.
+
+**V6's section header was 35px against V4/V5's 32px band** (19px title
+line-height + 2×8px). A real 3px rhythm break, invisible until the check that
+measures it could be reached. Fixed with `min-h-8` + `py-1.5` — `min-h` because
+the summary chips beside the title wrap.
+
+### The one still-unexplained failure
+
+`dark: the picker popup background matches the dock` is marked
+`checklist.known(...)` — loud, recorded, non-blocking. Its measurements
+contradict each other:
+
+    popup background   rgb(255,255,255)      dock   rgb(42,42,42)
+    --popover          #2a2a2a  (on the popup itself)
+    --color-popover    #2a2a2a  (on the popup itself)
+    paintedBy          [".bg-popover => var(--popover)"]
+    mounted 1, open 1, no inline background
+
+The only rule painting it reads the very property that measures `#2a2a2a`. A
+standalone probe on the identical URL and variant paints it **correctly**, so it
+reproduces only with the journey's accumulated page state.
+
+**Why it is `known()` rather than deleted or softened.** A throwing check blocks
+every check after it, and this one had been hiding the whole V7 block plus three
+real defects for fifteen journey runs. Deleting it would lose the finding;
+weakening it to always-true would lie. `report()` lists known failures
+separately so a suite carrying one can never read as a clean pass.
+
+**Method note, worth more than the fixes.** Four hypotheses about this bug
+measured plausibly and were wrong (the popup covering its own trigger; a
+`data-instant:!animate-none` class blocking unmount; the `@theme` aliases; and
+earlier, a bare `querySelector` matching the wrong popup — that one was real).
+The recurring trap: **light mode passes by coincidence**, because `:root`'s
+fallback white is exactly the colour the light panel wants, so a broken token
+looks correct until dark runs. Every wrong turn came from reasoning about the
+symptom instead of measuring the element; a ten-line probe ended it each time.

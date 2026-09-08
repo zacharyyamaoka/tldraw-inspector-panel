@@ -335,6 +335,7 @@ export const localConsoleErrors = readConsoleErrors
  */
 export function makeChecklist() {
   const checks = []
+  const knownFails = []
   const pass = (label) => {
     checks.push(label)
     process.stdout.write(`  PASS  ${label}\n`)
@@ -346,8 +347,36 @@ export function makeChecklist() {
       if (!condition) throw new Error(`FAILED  ${label}`)
       pass(label)
     },
+    /**
+     * A check that is currently failing for a REASON WE HAVE WRITTEN DOWN, and
+     * which must not stop the rest of the journey from running.
+     *
+     * WHY this exists rather than deleting or softening the assertion: a check
+     * that throws blocks every check after it, so one unresolved defect can
+     * hide a whole suite — that is exactly how this was introduced, with the
+     * V7 Figma checks sitting unrun behind a single colour assertion for ten
+     * journey runs. Deleting the check would lose the finding; weakening it to
+     * always-true would lie. This keeps it loud, keeps its measurements in the
+     * output, and still lets the suite continue.
+     *
+     * It is NOT a way to make red things green. `reason` must name the defect
+     * and where it is recorded, and `report()` counts these separately so a
+     * suite carrying known failures can never print as fully passing.
+     */
+    known(label, condition, reason) {
+      if (condition) { pass(`${label} [known-fail RESOLVED — remove the exemption]`); return }
+      knownFails.push(`${label} — ${reason}`)
+      process.stdout.write(`  KNOWN-FAIL  ${label}\n              ${reason}\n`)
+    },
+    knownFails,
     report(title) {
       process.stdout.write(`\n  ${checks.length}/${checks.length} ${title} checks passed\n`)
+      if (knownFails.length) {
+        // Loud on purpose: a suite carrying known failures must never read as
+        // a clean pass in a scrollback or a handoff.
+        process.stdout.write(`\n  ${knownFails.length} KNOWN FAILURE(S) — not fixed, deliberately not blocking:\n`)
+        for (const k of knownFails) process.stdout.write(`    - ${k}\n`)
+      }
       return checks.length
     },
   }

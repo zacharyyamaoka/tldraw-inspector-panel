@@ -680,7 +680,14 @@ function AccordionSection({
 					<button
 						type="button"
 						data-testid={`inspector-accordion-${id}`}
-						className="group flex w-full items-center gap-1.5 px-3 py-2 text-left"
+						// WHY min-h-8 with tighter padding rather than py-2: V4/V5's
+						// section headers are a 32px band, and this one measured 35px
+						// (19px title line-height + 2x8px), breaking the shared rhythm
+						// by 3px — visible as V6's rows sitting slightly lower than its
+						// siblings'. min-h rather than a fixed h because the summary
+						// beside the title wraps when a section has many chips, and a
+						// hard height would clip it.
+						className="group flex min-h-8 w-full items-center gap-1.5 px-3 py-1.5 text-left"
 					/>
 				}
 			>

@@ -65,29 +65,6 @@ function PopoverContent({
           data-slot="popover-content"
           className={cn(
             "z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-            // WHY `data-instant:!animate-none`: the real cause behind the
-            // dark-mode "popup background stays white" report — it was
-            // never a colour bug. Base UI stamps `data-instant="click"`
-            // (its own documented signal, `PopoverPositionerState.instant`
-            // — "present if animations should be instant") on a REOPEN that
-            // follows a recent close, and its own docs' reference CSS
-            // handles it with `&[data-instant] { transition: none }` — but
-            // that's for the TRANSITION-based pattern their docs use. This
-            // template instead runs the `animate-in`/`fade-in-0` KEYFRAME
-            // classes unconditionally on `data-open`, which never checks
-            // `data-instant` at all, and a keyframe animation Base UI never
-            // restarts (because "instant" means it isn't driving one this
-            // time) just sits frozen at its own 0%-frame value — measured
-            // directly: `opacity` stuck at literal `"0"` forever on a
-            // reopened popup, light AND dark alike, with the correct
-            // `--popover` value already resolved on the element the whole
-            // time. (`fade-in-0` — this class name's own `0` is the
-            // FROM-opacity, not a completed value.) Light's own check still
-            // read PASS by coincidence: light's frozen fallback IS white,
-            // which happens to equal light's own correct answer. `!` forces
-            // this over `data-open:animate-in` regardless of which rule
-            // Tailwind emits first — same specificity otherwise.
-            "data-instant:!animate-none",
             className
           )}
           {...props}
