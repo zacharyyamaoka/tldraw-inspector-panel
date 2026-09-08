@@ -34,12 +34,16 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      // WHY a second HTML entry: the pixel gate (tests/stock_pixels.mjs) needs a
+      // WHY three HTML entries: the pixel gate (tests/stock_pixels.mjs) needs a
       // built, servable page that mounts the identical board with only tldraw's
-      // own CSS — see the WHY at the top of src/bare.tsx.
+      // own CSS (bare — see the WHY at the top of src/bare.tsx), and the
+      // Inspector journey (tests/inspector_smoke.mjs) needs the chrome-styled
+      // Inspector on an otherwise-stock canvas to prove its paint rows withhold
+      // themselves honestly (stock — see the WHY at the top of src/stock.tsx).
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         bare: fileURLToPath(new URL('./bare.html', import.meta.url)),
+        stock: fileURLToPath(new URL('./stock.html', import.meta.url)),
       },
     },
   },
