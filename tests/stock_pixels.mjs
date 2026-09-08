@@ -36,7 +36,13 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..')
-const outDir = join(repoRoot, 'tests', 'out')
+// WHY its own subdirectory of tests/out, not tests/out itself: every journey
+// used to share one directory and clear all of it on every run, so this
+// gate's own `rm(outDir, {recursive:true})` deleted another journey's
+// captures (tests/inspector_smoke.mjs's) the moment either ran after the
+// other. Each journey now owns exactly one subdirectory and clears only
+// that one — see the README's testing section for the convention.
+const outDir = join(repoRoot, 'tests', 'out', 'stock_pixels')
 const WIDTH = 1440
 const HEIGHT = 960
 const RECT_ID = 'shape:probe-rect' // createShapeId('probe-rect'), see src/board/seed.ts

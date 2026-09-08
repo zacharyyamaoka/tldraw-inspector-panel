@@ -8,13 +8,13 @@
 // Ported from SystemSketch (77907974)'s `tests/primitive_inspector_smoke.mjs`
 // and `tests/primitive_inspector_stock_route_smoke.mjs`, folded into one file
 // against this repo's own board/routes: `index.html?seed=stock` (the chrome
-// route, paint seam installed) and `bare.html?seed=stock&inspector=1` (the
-// stock route — the Inspector on a bare canvas, proving every `paint` row
+// route, paint seam installed) and `stock.html?seed=stock` (the stock route —
+// the Inspector on an otherwise-stock canvas, proving every `paint` row
 // withholds itself). Any donor case that needed a SystemSketch-only import
 // (Block scenes, the slanted arrow, the stock-compatibility exporter) has no
 // analogue here and is not ported — see docs/log.md's M2 entry for the list.
 import { spawn } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -24,7 +24,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..')
-const outDir = join(repoRoot, 'tests', 'out')
+// WHY its own subdirectory of tests/out, not tests/out itself: see the WHY at
+// the top of tests/stock_pixels.mjs's own `outDir` — the two journeys used to
+// share one directory and delete each other's captures.
+const outDir = join(repoRoot, 'tests', 'out', 'inspector_smoke')
 const WIDTH = 1440
 const HEIGHT = 960
 const RECT_ID = 'shape:probe-rect'
@@ -87,7 +90,52 @@ async function selectShape(page, id) {
   await delay(250)
 }
 
+/* --------------------------------------------------------------- contrast */
+// WCAG 2 relative-luminance contrast, no dependency: the two `rgb(...)`/
+// `rgba(...)` strings a real `getComputedStyle` read hands back are the only
+// input shape this needs.
+function parseRgb(value) {
+  const match = /rgba?\(([^)]+)\)/.exec(value)
+  if (!match) throw new Error(`not an rgb()/rgba() value: ${value}`)
+  return match[1].split(',').slice(0, 3).map((part) => Number.parseFloat(part.trim()))
+}
+function relativeLuminance([r, g, b]) {
+  const [rs, gs, bs] = [r, g, b].map((channel) => {
+    const c = channel / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs
+}
+function contrastRatio(colorA, colorB) {
+  const la = relativeLuminance(parseRgb(colorA))
+  const lb = relativeLuminance(parseRgb(colorB))
+  const [lighter, darker] = la > lb ? [la, lb] : [lb, la]
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+/** Temporarily grows the viewport to fit the dock's entire scrollable
+ *  content (every group expanded, nothing clipped by `ScrollArea`), shoots
+ *  the dock's own rect, then restores the normal viewport. */
+async function captureFullDock(page, path) {
+  const dims = await evaluate(page, `JSON.stringify((() => {
+    const header = document.querySelector('[data-testid="inspector-panel"] header')
+    const viewport = document.querySelector('[data-testid="inspector"] [data-slot="scroll-area-viewport"]')
+    return { header: header.offsetHeight, content: viewport.scrollHeight }
+  })())`).then(JSON.parse)
+  const tallHeight = Math.ceil(dims.header + dims.content) + 24
+  await page.send('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: tallHeight, deviceScaleFactor: 1, mobile: false })
+  await delay(200)
+  const box = await elementBox(page, '[data-testid="inspector"]')
+  const shot = await page.send('Page.captureScreenshot', {
+    format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 },
+  })
+  await writeFile(path, Buffer.from(shot.data, 'base64'))
+  await page.send('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false })
+  await delay(150)
+}
+
 async function main() {
+  await rm(outDir, { recursive: true, force: true })
   await mkdir(outDir, { recursive: true })
 
   console.log('[inspector_smoke] building...')
@@ -222,6 +270,20 @@ async function main() {
           && idsAfter.has('inspector-number-cornerRadius') && idsAfter.has('inspector-toggle-textOutline'),
       )
 
+      // Segments/tiles must never clip: every one of them stays inside the
+      // dock's own rect, however many options its row holds (Fill style used
+      // to cut off at "fill|" with `lined-fill` pushed off-screen entirely).
+      {
+        const overflow = await evaluate(page, `JSON.stringify((() => {
+          const dock = document.querySelector('[data-testid="inspector"]').getBoundingClientRect()
+          const rows = [...document.querySelectorAll('[data-testid^="inspector-segment-"], [data-testid^="inspector-tile-"]')]
+          return rows
+            .map((el) => { const r = el.getBoundingClientRect(); return { id: el.dataset.testid, left: r.left, right: r.right } })
+            .filter((r) => r.right > dock.right + 0.5 || r.left < dock.left - 0.5)
+        })())`).then(JSON.parse)
+        checklist.add(`every segment/tile stays inside the dock (${overflow.length === 0 ? 'none clipped' : overflow.map((r) => r.id).join(', ')})`, overflow.length === 0)
+      }
+
       // Reads the dock's actual painted background, and separately what
       // `--tl-color-panel` resolves to right now — normalized to the same
       // `rgb(...)` shape by painting it onto a throwaway element, since the
@@ -237,32 +299,60 @@ async function main() {
         return { dock, panel }
       })())`).then(JSON.parse)
 
-      // Light-mode screenshot of the dock, and its background for the
+      // The Layer section header's own text colour against the dock's actual
+      // background — read fresh in whichever theme is live when called.
+      const headerContrast = () => evaluate(page, `JSON.stringify((() => {
+        const trigger = document.querySelector('[data-testid="inspector-group-layer"]')
+        return { text: getComputedStyle(trigger).color, bg: getComputedStyle(document.querySelector('[data-testid="inspector"]')).backgroundColor }
+      })())`).then(JSON.parse)
+
+      // One UNPRESSED geometry tile's ink, and the dock's own `--foreground` —
+      // both read fresh in whichever theme is live when called.
+      const tileInk = () => evaluate(page, `JSON.stringify((() => {
+        const tile = document.querySelector('[data-testid="inspector-tile-geo-ellipse"]')
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--foreground)'
+        document.querySelector('.tl-container').appendChild(probe)
+        const foreground = getComputedStyle(probe).color
+        probe.remove()
+        return { tile: getComputedStyle(tile).color, foreground }
+      })())`).then(JSON.parse)
+
+      // Light-mode: header contrast, tile ink, and its background for the
       // light-vs-dark comparison below.
       const lightValues = await dockPaintVsPanelVar()
       {
-        const dockBox = await elementBox(page, '[data-testid="inspector"]')
-        const shot = await page.send('Page.captureScreenshot', {
-          format: 'png', clip: { x: dockBox.x, y: dockBox.y, width: dockBox.width, height: dockBox.height, scale: 1 },
-        })
-        await writeFile(join(outDir, 'inspector-dock-light.png'), Buffer.from(shot.data, 'base64'))
+        const { text, bg } = await headerContrast()
+        const ratio = contrastRatio(text, bg)
+        checklist.add(`light mode: section header contrast ${ratio.toFixed(2)}:1 (>= 4.5:1)`, ratio >= 4.5)
+
+        const ink = await tileInk()
+        checklist.add('light mode: an unpressed tile\'s ink equals --foreground', ink.tile === ink.foreground)
+
+        await captureFullDock(page, join(outDir, 'inspector-dock-light.png'))
       }
 
       // Dark mode: the dock's own background follows `--tl-color-panel`
-      // exactly, and differs from the light-mode reading above.
+      // exactly, differs from the light-mode reading above, the header stays
+      // readable, and the tile ink follows the theme instead of painting
+      // black on dark grey.
       {
         await evaluate(page, `window.__lab.editor.user.updateUserPreferences({ colorScheme: 'dark' })`)
         await delay(200)
         const darkValues = await dockPaintVsPanelVar()
-        const dockBoxDark = await elementBox(page, '[data-testid="inspector"]')
-        const shotDark = await page.send('Page.captureScreenshot', {
-          format: 'png', clip: { x: dockBoxDark.x, y: dockBoxDark.y, width: dockBoxDark.width, height: dockBoxDark.height, scale: 1 },
-        })
-        await writeFile(join(outDir, 'inspector-dock-dark.png'), Buffer.from(shotDark.data, 'base64'))
         checklist.add(
           'dark mode: the dock background equals --tl-color-panel and differs from light',
           darkValues.dock === darkValues.panel && darkValues.dock !== lightValues.dock,
         )
+
+        const { text, bg } = await headerContrast()
+        const ratio = contrastRatio(text, bg)
+        checklist.add(`dark mode: section header contrast ${ratio.toFixed(2)}:1 (>= 4.5:1)`, ratio >= 4.5)
+
+        const ink = await tileInk()
+        checklist.add('dark mode: an unpressed tile\'s ink equals --foreground', ink.tile === ink.foreground)
+
+        await captureFullDock(page, join(outDir, 'inspector-dock-dark.png'))
 
         await evaluate(page, `window.__lab.editor.user.updateUserPreferences({ colorScheme: 'light' })`)
         await delay(200)
@@ -270,17 +360,40 @@ async function main() {
         checklist.add('switching back to light restores the light dock background', lightAgain.dock === lightValues.dock)
       }
 
+      // The colour popup lands in a Base UI portal appended to <body>, a
+      // sibling of the dock rather than a descendant of it — app.css's
+      // `[data-slot="popover-content"]` rule is what has to carry the app
+      // font there, not the dock's own `font-sans`. Screenshot the whole
+      // page (light theme) so the open popup and the dock are both visible,
+      // and assert its font isn't the browser's serif fallback.
+      {
+        await reveal(page, '[data-testid="inspector-color-strokeColor"]')
+        await clickElement(page, '[data-testid="inspector-color-strokeColor"]')
+        await delay(250)
+        const popupFont = await evaluate(page, `getComputedStyle(document.querySelector('[data-slot="popover-content"]'))?.fontFamily`)
+        // WHY "Geist", not "not serif": the app's own declared stack ends in
+        // the generic `sans-serif`, whose name literally contains "serif" —
+        // asserting its ABSENCE would fail on the correct value. The browser's
+        // actual fallback (unset `font-family`) is `Times New Roman`, which
+        // this positively rules out by requiring the real face name instead.
+        checklist.add(`the portaled colour popup uses the app font, not the browser's serif fallback (${popupFont})`, typeof popupFont === 'string' && /Geist/i.test(popupFont))
+        const popoverShot = await page.send('Page.captureScreenshot', { format: 'png' })
+        await writeFile(join(outDir, 'inspector-color-popover-open.png'), Buffer.from(popoverShot.data, 'base64'))
+        await key(page, 'Escape', 'Escape')
+        await delay(150)
+      }
+
       page.close()
 
       /* ----------------------------------------------------------- stock route */
       const stockPage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-      await stockPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/bare.html?seed=stock&inspector=1` })
+      await stockPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/stock.html?seed=stock` })
       await waitFor(stockPage, 'window.__lab && window.__lab.ready === true', 'stock route ready', 20000)
       await delay(500)
       await selectShape(stockPage, RECT_ID)
       const stockIds = await testIds(stockPage)
       checklist.add(
-        'paint rows are ABSENT on the stock route (bare.html?inspector=1)',
+        'paint rows are ABSENT on the stock route (stock.html)',
         !stockIds.has('inspector-number-fillOpacity') && !stockIds.has('inspector-color-strokeColor')
           && !stockIds.has('inspector-number-cornerRadius') && !stockIds.has('inspector-toggle-textOutline'),
       )
@@ -289,11 +402,7 @@ async function main() {
         stockIds.has('inspector-field-x') && stockIds.has('inspector-segment-fill-solid')
           && stockIds.has('inspector-swatch-color-black'),
       )
-      const stockDockBox = await elementBox(stockPage, '[data-testid="inspector"]')
-      const stockShot = await stockPage.send('Page.captureScreenshot', {
-        format: 'png', clip: { x: stockDockBox.x, y: stockDockBox.y, width: stockDockBox.width, height: stockDockBox.height, scale: 1 },
-      })
-      await writeFile(join(outDir, 'inspector-dock-stock-route.png'), Buffer.from(stockShot.data, 'base64'))
+      await captureFullDock(stockPage, join(outDir, 'inspector-dock-stock-route.png'))
       stockPage.close()
     } finally {
       session.kill()
