@@ -69,6 +69,34 @@ import {
 } from './inspectorModel'
 import { ScrubNumber } from './ScrubNumber'
 import { ThemePanel } from './ThemePanel'
+import {
+	CompactSelect,
+	IconButton,
+	ListRow,
+	ResizeHandle,
+	SegmentedControl,
+	VariantPicker,
+	hexAlphaPercent,
+	useDockWidth,
+	withHexAlphaPercent,
+	type SegmentedItem,
+} from './variants/kit'
+import { getVariant, INLINE_PREFIXES, VARIANTS } from './variants/theme'
+import { TLDRAW_ICONS, TldrawIcon } from './variants/tldrawIcons'
+
+/** Read once at startup, same rule as `readSeedMode`/`getVariant` itself —
+ *  see `variants/theme.ts`'s own WHY. */
+const VARIANT = getVariant()
+const V = VARIANTS[VARIANT]
+
+/** An option gets an icon when the variant asks for icons on this control id
+ *  AND `tldrawIcons.tsx` actually ships one for this value — `geo` never
+ *  does (the app's own rounded rect has no tldraw asset), so it always
+ *  falls through to the hand-drawn `Glyph` below regardless of variant. */
+function enumIcon(controlId: string, value: string): string | undefined {
+	const wants = V.iconControlIds === 'all' || V.iconControlIds.has(controlId)
+	return wants ? TLDRAW_ICONS[controlId]?.[value] : undefined
+}
 
 /** `CSS.supports` is the only honest oracle for "will the engine paint this" —
  *  the field accepts `rgba(...)`, `transparent` and `color-mix(...)` as well
@@ -146,11 +174,18 @@ function TileGroup({ control, onChange }: { control: InspectorControl; onChange(
 									// (`data-[state=on]:bg-muted`) and leaves text colour alone, so
 									// matching that is "whatever the shadcn toggle already does"
 									// rather than a third scheme.
-									className="size-7 p-0 text-foreground"
+									//
+									// WHY `size-6`, not the shadcn default: the variants brief
+									// names open-pencil's own geometry tile size by hand ("a grid
+									// of size-6 icon buttons") — one of the "large buttons" Zach's
+									// rejection named specifically.
+									className="size-6 p-0 text-foreground"
 								/>
 							}
 						>
-							<Glyph name={option.value} path={option.path} viewBox={option.viewBox} />
+							{enumIcon(control.id, option.value)
+								? <TldrawIcon id={control.id} value={option.value} className="size-4" />
+								: <Glyph name={option.value} path={option.path} viewBox={option.viewBox} />}
 						</TooltipTrigger>
 						<TooltipContent>{option.label}</TooltipContent>
 					</Tooltip>
@@ -173,24 +208,37 @@ function TileGroup({ control, onChange }: { control: InspectorControl; onChange(
  */
 function SegmentGroup({ control, onChange }: { control: InspectorControl; onChange(value: InspectorValue): void }) {
 	const current = typeof control.value === 'string' ? control.value : undefined
+	const options = control.options ?? []
+	const items: SegmentedItem[] = options.map((option) => {
+		const icon = enumIcon(control.id, option.value)
+		return {
+			value: option.value,
+			label: option.label,
+			icon: icon ? <TldrawIcon id={control.id} value={option.value} className="size-3.5" /> : undefined,
+		}
+	})
+	// V3 "Inline"'s own rule: an enum wider than the variant's threshold
+	// (font/fill-style/dash all clear V1/V2's shared Infinity) collapses to
+	// a Select instead of wrapping onto a second row — see theme.ts's WHY.
+	if (options.length > V.selectThreshold) {
+		return (
+			<CompactSelect
+				items={items}
+				value={current}
+				onChange={onChange}
+				testId={`inspector-segment-${control.id}`}
+				ariaLabel={control.label}
+			/>
+		)
+	}
 	return (
-		<ToggleGroup
-			value={current ? [current] : []}
-			onValueChange={(next) => { if (next[0] !== undefined) onChange(next[0]) }}
-			aria-label={control.label}
-			className="w-full flex-wrap"
-		>
-			{(control.options ?? []).map((option) => (
-				<ToggleGroupItem
-					key={option.value}
-					value={option.value}
-					data-testid={`inspector-segment-${control.id}-${option.value}`}
-					className="min-w-fit flex-1 text-xs"
-				>
-					{option.label}
-				</ToggleGroupItem>
-			))}
-		</ToggleGroup>
+		<SegmentedControl
+			items={items}
+			value={current}
+			onChange={onChange}
+			testIdPrefix={`inspector-segment-${control.id}`}
+			ariaLabel={control.label}
+		/>
 	)
 }
 
@@ -231,9 +279,20 @@ function TextRow({ control, onChange }: { control: InspectorControl; onChange(va
 	)
 }
 
-/** A `Popover` + `react-colorful`'s `HexAlphaColorPicker`, plus an honest text
- *  field: the well only speaks 8-digit hex, but the engine paints
- *  `rgba(...)`/`color-mix(...)` too, so the text field stays the general path. */
+/**
+ * open-pencil's own colour row (Zach's screenshot: swatch · hex text · alpha
+ * % · clear ×) rather than the wider swatch-plus-popover well this replaces.
+ * A `Popover` + `react-colorful`'s `HexAlphaColorPicker` still opens off the
+ * swatch — the well only speaks 8-digit hex, but the engine paints
+ * `rgba(...)`/`color-mix(...)` too, so the text field stays the general path.
+ *
+ * WHY the alpha % field is DERIVED from the same hex8 string rather than a
+ * second piece of state: `inspectorModel.ts` keeps one colour value per row,
+ * never a separate channel — reading/writing the last hex byte as 0-100 is
+ * pure view-layer arithmetic (`kit.tsx`'s `hexAlphaPercent`/
+ * `withHexAlphaPercent`), not a model change, which this pass is scoped to
+ * avoid (see docs/log.md).
+ */
 function ColorRow({
 	control,
 	onChange,
@@ -257,45 +316,65 @@ function ColorRow({
 		if (next !== current) onChange(next)
 	}
 	return (
-		<div className="flex items-center gap-1.5">
-			<Popover>
-				<PopoverTrigger
-					render={
-						<button
-							type="button"
-							aria-label={`${control.label} picker`}
-							data-testid={`inspector-color-${control.id}`}
-							className="size-6 shrink-0 rounded-md border border-border"
-							style={{ background: current || 'transparent' }}
-						/>
-					}
-				/>
-				<PopoverContent className="w-auto p-2">
-					{/* react-colorful only parses hex/hex8 — `current` can be any CSS
-					    colour the engine accepts (`rgba(...)`, `color-mix(...)`), so
-					    the picker gets the coerced `hex` and the text field beside it
-					    stays the general path for everything else. */}
-					<HexAlphaColorPicker
-						color={hex === '#00000000' ? '#000000ff' : hex}
-						onChange={(next) => onChange(next)}
+		<ListRow
+			testId={control.id}
+			swatch={
+				<Popover>
+					<PopoverTrigger
+						render={
+							<button
+								type="button"
+								aria-label={`${control.label} picker`}
+								data-testid={`inspector-color-${control.id}`}
+								className="size-5 shrink-0 rounded-sm border border-[var(--v-border)]"
+								style={{ background: current || 'transparent' }}
+							/>
+						}
 					/>
-				</PopoverContent>
-			</Popover>
-			<Input
-				spellCheck={false}
-				value={draft ?? current}
-				placeholder={control.unset ? 'default' : control.value === null ? 'Mixed' : 'default'}
-				aria-label={`${control.label} value`}
-				data-testid={`inspector-color-text-${control.id}`}
-				className="h-7 flex-1"
-				onChange={(event) => setDraft(event.target.value)}
-				onBlur={commitText}
-				onKeyDown={(event) => {
-					if (event.key === 'Enter') commitText()
-					if (event.key === 'Escape') setDraft(null)
-				}}
-			/>
-		</div>
+					<PopoverContent className="w-auto p-2">
+						{/* react-colorful only parses hex/hex8 — `current` can be any CSS
+						    colour the engine accepts (`rgba(...)`, `color-mix(...)`), so
+						    the picker gets the coerced `hex` and the text field beside it
+						    stays the general path for everything else. */}
+						<HexAlphaColorPicker
+							color={hex === '#00000000' ? '#000000ff' : hex}
+							onChange={(next) => onChange(next)}
+						/>
+					</PopoverContent>
+				</Popover>
+			}
+			name={
+				<input
+					spellCheck={false}
+					value={draft ?? current}
+					placeholder={control.unset ? 'default' : control.value === null ? 'Mixed' : 'default'}
+					aria-label={`${control.label} value`}
+					data-testid={`inspector-color-text-${control.id}`}
+					className="w-full min-w-0 border-0 bg-transparent p-0 text-[11px] text-[var(--v-surface)] outline-none"
+					onChange={(event) => setDraft(event.target.value)}
+					onBlur={commitText}
+					onKeyDown={(event) => {
+						if (event.key === 'Enter') commitText()
+						if (event.key === 'Escape') setDraft(null)
+					}}
+				/>
+			}
+		>
+			<div className="w-14 shrink-0">
+				<ScrubNumber
+					value={current ? hexAlphaPercent(current) : null}
+					unset={!current}
+					min={0}
+					max={100}
+					step={1}
+					unit="%"
+					label={`${control.label} alpha`}
+					testId={`color-alpha-${control.id}`}
+					title="Alpha, read from this colour's own hex8 — the model still keeps one colour value, not a separate channel."
+					onChange={(percent) => onChange(withHexAlphaPercent(current || '#000000', percent))}
+				/>
+			</div>
+		</ListRow>
 	)
 }
 
@@ -321,6 +400,7 @@ function Control({
 					step={control.step}
 					unit={control.unit}
 					glyph={control.glyph}
+					prefixText={V.inlinePrefixes ? INLINE_PREFIXES[control.id] : undefined}
 					fallback={control.fallback}
 					label={control.label}
 					testId={control.id}
@@ -369,9 +449,15 @@ function ControlRow({
 	onChange(id: string, value: InspectorValue, gestureStart: boolean): void
 	onClear(id: string): void
 }) {
+	// V3 "Inline": a field whose letter/symbol prefix is already printed
+	// INSIDE it (X/Y/W/H/°/%, see `variants/theme.ts`'s `INLINE_PREFIXES`)
+	// drops the caption a Verbatim/Canvas-native row still needs — the
+	// prefix carries the same information the label did, at a fraction of
+	// the width, which is the whole point of a denser layout.
+	const hasInlinePrefix = V.inlinePrefixes && control.kind === 'number' && INLINE_PREFIXES[control.id] !== undefined
 	return (
 		<div className="flex items-center gap-1.5" data-control={control.id} data-source={control.source}>
-			{control.paired ? null : (
+			{control.paired || hasInlinePrefix ? null : (
 				<span
 					className="w-20 shrink-0 truncate text-xs text-muted-foreground"
 					title={control.source === 'style' ? 'tldraw style — inherited by the next shape drawn' : control.source === 'paint' ? 'display override — the record stays stock tldraw' : 'stock shape property, saved in the file'}
@@ -430,23 +516,57 @@ function GroupSection({
 	onChange(id: string, value: InspectorValue, gestureStart: boolean): void
 	onClear(id: string): void
 }) {
+		// Every variant's own screenshot shows this affordance (Zach's
+		// reference: the ↺ in a section's actions column, present only once
+		// something in that section has actually drifted from tldraw's own
+		// value) — a per-GROUP reset, distinct from the dock header's
+		// existing all-shapes Reset: it clears exactly the rows this one
+		// section shows overridden, via the same `onClear` every row's own
+		// × already calls.
+	const overriddenIds = group.controls.filter((control) => control.overridden).map((control) => control.id)
 	return (
 		<Collapsible defaultOpen>
-			<CollapsibleTrigger
-				render={
-					<button
-						type="button"
-						data-testid={`inspector-group-${group.id}`}
-						className="group flex w-full appearance-none items-center justify-between gap-2 border-0 bg-transparent px-3 py-2 text-xs font-semibold text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+			{/* WHY the reset icon is a SIBLING of the trigger, not a child of it:
+			    `CollapsibleTrigger` renders as a real `<button>` (below) — nesting
+			    another interactive `<button>` inside it is invalid HTML the
+			    browser silently reflows, which is exactly the kind of "looks
+			    fine, breaks on click" bug a nested button always is. The outer
+			    grid carries the shared `hover:bg-accent` so the whole row still
+			    reads as one hoverable strip even though only part of it is the
+			    actual toggle. */}
+			<div className="grid w-full grid-cols-[1fr_auto] items-center gap-2 hover:bg-accent">
+				<CollapsibleTrigger
+					render={
+						<button
+							type="button"
+							data-testid={`inspector-group-${group.id}`}
+							// WHY `group` stays on THIS button, not the outer row div: Base UI
+							// stamps `data-panel-open` on the trigger itself, and Tailwind's
+							// `group-data-[panel-open]` selector needs the `.group` marker on
+							// the SAME element that carries the data attribute — moving it to
+							// an ancestor that never gets that attribute silently stops the
+							// chevron from ever rotating.
+							className="group flex w-full appearance-none items-center gap-1.5 border-0 bg-transparent px-3 py-2 text-left text-xs font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+						/>
+					}
+				>
+					<span>{group.label}</span>
+					<ChevronRight
+						aria-hidden="true"
+						className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-data-[panel-open]:rotate-90"
 					/>
-				}
-			>
-				<span>{group.label}</span>
-				<ChevronRight
-					aria-hidden="true"
-					className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-data-[panel-open]:rotate-90"
-				/>
-			</CollapsibleTrigger>
+				</CollapsibleTrigger>
+				{overriddenIds.length > 0 ? (
+					<IconButton
+						title={`Reset ${group.label} to tldraw's own values`}
+						data-testid={`inspector-group-reset-${group.id}`}
+						className="mr-2 size-5"
+						onClick={() => overriddenIds.forEach((id) => onClear(id))}
+					>
+						↺
+					</IconButton>
+				) : <span className="mr-2" />}
+			</div>
 			<CollapsibleContent className="flex flex-col gap-2 px-3 pb-3">
 				{captionBlocks(group.controls).map((block, index) => (
 					<div key={`${block.caption ?? 'block'}-${index}`} className="flex flex-col gap-1">
@@ -612,6 +732,11 @@ export function Inspector({ isMobile: _isMobile, styles: _styles, children: _chi
 	const editor = useEditor()
 	const ref = useRef<HTMLDivElement>(null)
 	usePassThroughWheelEvents(ref)
+	// Mandatory behaviour #1 (the variants brief): drag-to-resize, clamped,
+	// persisted (skipped on a `?seed=` run — see `useDockWidth`'s own WHY),
+	// reset on double-click. `ResizeHandle` computes the delta; this is just
+	// where the number lives.
+	const [dockWidth, setDockWidth] = useDockWidth()
 
 	useEffect(() => {
 		const element = ref.current
@@ -658,8 +783,14 @@ export function Inspector({ isMobile: _isMobile, styles: _styles, children: _chi
 			// `Popover`'s content, which Base UI portals to a sibling of `#root`
 			// under `<body>` — see the matching `[data-slot="popover-content"]`
 			// rule in app.css for that one.
-			className="pointer-events-auto absolute top-0 right-0 bottom-0 w-[280px] border-l border-border bg-background font-sans text-foreground"
+			// `data-variant` is what every `[data-variant]` rule in app.css keys
+			// off (see that file's own WHY) — set once, here, so BOTH tabs
+			// re-theme through one attribute instead of two.
+			data-variant={VARIANT}
+			style={{ width: dockWidth }}
+			className="pointer-events-auto absolute top-0 right-0 bottom-0 border-l border-border bg-background font-sans text-foreground"
 		>
+			<ResizeHandle width={dockWidth} onWidth={setDockWidth} />
 			{/* M3: the Inspect dock over one shape's paint (layer 1+2, above) and
 			    the Theme tab over the app-global palette (layer 3, `ThemePanel.tsx`)
 			    are two different questions — "what can THIS shape be" vs. "what
@@ -688,9 +819,15 @@ export function Inspector({ isMobile: _isMobile, styles: _styles, children: _chi
 			    `bottom-0`/`ScrollArea` size against) is unchanged — only the
 			    Tabs content inside it starts lower. */}
 			<Tabs defaultValue="inspect" className="mt-9 h-[calc(100%-2.25rem)] gap-0">
-				<TabsList variant="line" className="w-full shrink-0 rounded-none border-b border-border px-1 pt-1">
-					<TabsTrigger value="inspect" data-testid="inspector-tab-inspect">Inspect</TabsTrigger>
-					<TabsTrigger value="theme" data-testid="inspector-tab-theme">Theme</TabsTrigger>
+				<TabsList variant="line" className="w-full shrink-0 items-center justify-between rounded-none border-b border-border px-1 pt-1">
+					<div className="flex">
+						<TabsTrigger value="inspect" data-testid="inspector-tab-inspect">Inspect</TabsTrigger>
+						<TabsTrigger value="theme" data-testid="inspector-tab-theme">Theme</TabsTrigger>
+					</div>
+					{/* Live variant flip on port 5180 — the review this is FOR. See
+					    kit.tsx's `VariantPicker` for why it reloads rather than
+					    re-theming in place. */}
+					<VariantPicker current={VARIANT} />
 				</TabsList>
 				<TabsContent value="inspect" className="min-h-0 flex-1">
 					<InspectorPanel editor={editor} />
