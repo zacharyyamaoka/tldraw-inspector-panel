@@ -68,6 +68,7 @@ import {
 } from './inspectorModel'
 import { ScrubNumber } from './ScrubNumber'
 import { ThemePanel } from './ThemePanel'
+import { FigmaAnatomyView } from './variants/figmaVariants'
 import {
 	CompactSelect,
 	IconButton,
@@ -82,7 +83,7 @@ import {
 	withHexAlphaPercent,
 	type SegmentedItem,
 } from './variants/kit'
-import { getVariant, INLINE_PREFIXES, VARIANTS } from './variants/theme'
+import { getVariant, INLINE_PREFIXES, isFigmaAnatomyVariant, VARIANTS } from './variants/theme'
 import { TLDRAW_ICONS, TldrawIcon } from './variants/tldrawIcons'
 
 /** Read once at startup, same rule as `readSeedMode`/`getVariant` itself —
@@ -757,21 +758,35 @@ function InspectorPanel({ editor }: { editor: Editor }) {
 	if (sameSelection || !focusedInDock) frozen.current = liveModel
 	const model = frozen.current
 
-	return (
-		<InspectorView
-			model={model}
-			onChange={(id, value, gestureStart) => {
-				if (!model) return
-				applyPrimitiveInspectorControl(editor, id, value, { mark: gestureStart, shapeIds: model.shapeIds })
-			}}
-			// The shapes this reading described — `ColorRow`/`TextRow` clear or
-			// commit on blur, which is after the click that may have moved the
-			// selection onto a different shape.
-			onClear={(id) => clearPrimitiveInspectorControl(editor, id, model?.shapeIds)}
-			onReset={() => resetPrimitiveOverrides(editor, model?.shapeIds)}
-			onUnlock={() => unlockPrimitiveInspectorSelection(editor)}
-		/>
-	)
+	const onChange = (id: string, value: InspectorValue, gestureStart: boolean) => {
+		if (!model) return
+		applyPrimitiveInspectorControl(editor, id, value, { mark: gestureStart, shapeIds: model.shapeIds })
+	}
+	// The shapes this reading described — `ColorRow`/`TextRow` clear or
+	// commit on blur, which is after the click that may have moved the
+	// selection onto a different shape.
+	const onClear = (id: string) => clearPrimitiveInspectorControl(editor, id, model?.shapeIds)
+	const onReset = () => resetPrimitiveOverrides(editor, model?.shapeIds)
+	const onUnlock = () => unlockPrimitiveInspectorSelection(editor)
+
+	// Round 2: 4/5/6 draw the Figma anatomy through a completely different
+	// component tree (`figmaVariants.tsx`) rather than round 1's group-based
+	// `InspectorView` — see `variants/theme.ts`'s `isFigmaAnatomyVariant`.
+	if (isFigmaAnatomyVariant(VARIANT)) {
+		return (
+			<FigmaAnatomyView
+				variant={VARIANT}
+				model={model}
+				editor={editor}
+				onChange={onChange}
+				onClear={onClear}
+				onReset={onReset}
+				onUnlock={onUnlock}
+			/>
+		)
+	}
+
+	return <InspectorView model={model} onChange={onChange} onClear={onClear} onReset={onReset} onUnlock={onUnlock} />
 }
 
 /**
