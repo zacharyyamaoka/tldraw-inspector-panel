@@ -16,6 +16,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* WHY paths-only, no baseUrl: this scaffold's TypeScript (~6.0) raises TS5101 on
+       `baseUrl` (deprecated, removed in TS 7.0). `paths` alone resolves relative to
+       this file with no baseUrl needed — see the probe RESULT.md §6. */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,

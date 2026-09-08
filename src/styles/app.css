@@ -1,0 +1,167 @@
+/* WHY layers only, no `@import "tailwindcss";`: that single import pulls in
+   Tailwind's preflight reset, which resets html/body's font-family away from the
+   browser default. `.tl-container` sets no font-family of its own, so it inherits
+   whatever the page cascade provides — and that inherited font shifts tldraw's own
+   text-dependent shape geometry (note/frame auto-grow, text measurement), not just
+   glyph rendering. Measured 0/800,000 canvas pixels differ with layers-only vs. no
+   Tailwind at all, and ~11.5-12.25% differ with the full import — see
+   docs/assets/tldraw-styling-lab-probe/RESULT.md (systemsketch repo) §3-4. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Fallback tokens for shadcn chrome OUTSIDE the tldraw canvas (e.g. before the
+   canvas mounts, or any future non-canvas page furniture). Literal output of
+   `shadcn init -b base -p nova`, unedited. */
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* WHY on .tl-container and not :root: tldraw declares --tl-* only from .tl-container
+   down, so an alias on :root is guaranteed-invalid there and children inherit the
+   invalid value. Every --tl-* name below is grepped against node_modules/tldraw/
+   tldraw.css (tests/theme_bridge.test.ts asserts it), so chrome INSIDE the canvas
+   (a shadcn popover mounted over the style panel, say) follows tldraw's own theme,
+   light and dark, instead of the static shadcn fallback above. */
+.tl-container {
+  --background: var(--tl-color-panel);
+  --foreground: var(--tl-color-text);
+  --card: var(--tl-color-panel-contrast);
+  --card-foreground: var(--tl-color-text);
+  --popover: var(--tl-color-panel);
+  --popover-foreground: var(--tl-color-text);
+  --primary: var(--tl-color-selected);
+  --primary-foreground: var(--tl-color-selected-contrast);
+  --secondary: var(--tl-color-low);
+  --secondary-foreground: var(--tl-color-text-1);
+  --muted: var(--tl-color-muted-2);
+  --muted-foreground: var(--tl-color-text-3);
+  --accent: var(--tl-color-low);
+  --accent-foreground: var(--tl-color-text);
+  --border: var(--tl-color-divider);
+  --input: var(--tl-color-low-border);
+  --ring: var(--tl-color-focus);
+}
+
+/* WHY no `@layer base { html { @apply font-sans } body { @apply bg-background
+   text-foreground } * { @apply border-border } }` block: `shadcn init` generated
+   one, and it is functionally a second preflight — it globally resets html's
+   font-family and body's colors the same way Tailwind's own preflight does, which
+   is exactly the mechanism the layers-only import above exists to avoid (see the
+   top-of-file WHY). `.tl-container` sets no font-family of its own, so that reset
+   would cascade into the canvas and reintroduce the shape-geometry drift the pixel
+   gate (tests/stock_pixels.mjs) is built to catch. Chrome that wants these tokens
+   applies them locally via shadcn's per-component classes instead of a global
+   reset — see docs/log.md's M1 entry for the measured deviation from the brief. */

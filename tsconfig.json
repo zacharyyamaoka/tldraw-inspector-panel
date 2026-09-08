@@ -3,5 +3,17 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ]
+  ],
+  /* WHY duplicated here: this root config carries no `files`, so `tsc -b` never
+     type-checks through it directly (see tsconfig.app.json for the real alias, used
+     by the compiler). But shadcn's CLI reads path aliases via the `tsconfig-paths`
+     package's `loadConfig`, which resolves against *this* file only — it does not
+     follow TS project `references` into tsconfig.app.json — and falls back to
+     `paths: {}` (silently writing components to a literal `./@/...` directory)
+     without it. Same paths-only, no-baseUrl shape as tsconfig.app.json. */
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
 }
