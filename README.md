@@ -198,3 +198,44 @@ blur. `Inspector.tsx`'s `InspectorPanel` freezes its model reference while
 focus is inside the dock and the selection is about to change, and only
 adopts a fresh reading once nothing here is focused (or the selection is
 unchanged) — see the `WHY` there and docs/log.md's M2 entry.
+
+## Stock check (M4)
+
+A "Stock check" button, mounted through tldraw's `components.SharePanel` seam
+(`src/board/mount.tsx`), exports the live board the way a `.tldr` save would
+(`serializeTldrawJson`), reparses it against a fresh, unconfigured
+`createTLSchema()`, mounts that store in a second, hidden `<Tldraw>`
+(`src/compat/hiddenStockMount.tsx`), and diffs what each side actually paints:
+whole board first, then every shape stock tldraw can also render, ranked by
+divergence (`src/compat/stockCheck.ts`, `src/compat/StockCheckReport.tsx`).
+This is the instrument the plan's §4 calls for — it makes layer 2 (paint
+overrides carried in `shape.meta`, `getCustomDisplayValues`) visible and
+ranked, since a schema that never installed those overrides can't paint them.
+A parse rejection (a board stock tldraw genuinely refuses) is reported as the
+loudest possible row and nothing else runs.
+
+Run it: click "Stock check" top-right in the running app, or drive it
+headlessly with `npm run test:compat` (builds, serves `dist/` on a free port,
+opens the seeded board, clicks the button, reads the report back out of the
+DOM). Threshold is `pixelmatch` at `0.1` — looser than the M1 pixel gate's
+byte-exact `0`, because M4's diffs are two independently-rasterized SVG→canvas
+exports of shapes that render the same underlying record; `0.1` absorbs
+anti-aliasing jitter between them without hiding a real divergence.
+
+**Known blind spot:** the white text halo (`--tl-text-outline`) is a CSS
+variable, not an exported property — it never shows up as a diff on either
+side even where it visibly differs on-screen. Stated in the report's footer,
+not silently swallowed.
+
+**Interaction with the M1 pixel gate.** `components.SharePanel` is wired in
+`src/board/mount.tsx`, the one file `bare.html` and `index.html` both build
+their board from — so `bare.html` now paints the same unstyled button
+`index.html` paints styled. `tests/stock_pixels.mjs`'s byte-exact gate
+(threshold 0) currently fails on exactly that: ~11.5k / ~14k changed px out of
+~1.4M, both from the button's pixels, nothing else. This is expected fallout
+of putting a real chrome control on the one shared seam, not a regression in
+what the gate was built to prove (Tailwind/shadcn/Base UI stay inert *inside
+the canvas*) — `tests/stock_pixels.mjs` is out of this branch's confined edit
+list (a peer is mid-flight on it for M2) and is not touched here; whoever
+merges M4 needs to teach that gate about the button before `npm run check`
+goes green again. See `docs/log.md`'s M4 entry.

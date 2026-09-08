@@ -360,3 +360,78 @@ server itself, not just the built app.
 - `mount-*.js` is a single ~1.9 MB chunk (tldraw); `vite build` warns about
   it. Not addressed here — code-splitting is a product decision for when
   there's a second real entry point's worth of code to split against.
+
+## 2026-09-07 — M4: the stock-compatibility button
+
+Built on `.worktrees/m4-compat` (branch `m4-compat`, based on M1 at 29b478d)
+rather than on `main`, per this milestone's own instructions — a peer builder
+is implementing M2 (the inspector) directly on `main` and touches
+`src/board/mount.tsx`, `src/inspector/**`, `src/styles/app.css`,
+`tests/stock_pixels.mjs` and `package.json`; this branch confines its edits to
+`src/compat/**` (new), one line in `src/board/mount.tsx`, `tests/compat_smoke.mjs`
+(new) and one `package.json` script line, plus this log and the README, to
+stay out of the shared git index.
+
+Landed the whole brief: "Stock check" button in tldraw's `components.SharePanel`
+seam opening a shadcn `Sheet`; `serializeTldrawJson` → `parseTldrawJsonFile`
+against a bare `createTLSchema()` → a hidden `<Tldraw>` mount
+(`src/compat/hiddenStockMount.tsx`) with no shapeUtils/components beyond
+tldraw's own defaults; whole-board and per-shape `toImage()` diffs decoded via
+`createImageBitmap` + canvas (no `pngjs` — that stays a Node-only dependency
+of `tests/stock_pixels.mjs`) and compared with the already-installed
+`pixelmatch` at threshold 0.1 (see README's "Stock check" section for why
+0.1, not the pixel gate's 0); rows ranked by divergence, whole board first,
+unpaired shapes reported as their own always-rendered section, a rejected
+parse as the loudest possible row one with nothing else running; a `.tldr`
+download link as a stated convenience, not the proof. Journey:
+`tests/compat_smoke.mjs` (`npm run test:compat`), 7/7 checks green.
+
+### The button needs `pointer-events-auto` or it silently does nothing
+
+First run of the journey hung on `waitFor(... stock-check-whole-board ...)`
+with zero console errors and the button visibly present, in the right slot,
+at the right coordinates. `document.elementFromPoint()` at the button's own
+center returned `.tl-background` — the canvas, not the button.
+`tldraw.css`'s `.tlui-layout` (the whole chrome overlay grid) is
+`pointer-events: none` by design, so its own click-through to the canvas
+never eats a real interaction; every stock tldraw control opts back in
+individually (`.tlui-scrollable`, the toolbar buttons, etc. each set
+`pointer-events: all`/`auto` themselves). `.tlui-share-zone` — the wrapper
+`DefaultSharePanel` (and now `StockCheckButton`) renders into — sets no
+pointer-events of its own, so it inherited `none` from the ancestor grid.
+Fixed by adding `pointer-events-auto` to both the zone wrapper and the
+`Button` itself in `src/compat/StockCheckButton.tsx`. Generalizes to any
+future control mounted through a bare `components.*` override rather than
+one of tldraw's own pre-wired slots — see the WHY comment at the fix.
+
+### Interaction with the M1 pixel gate (not fixed here, by design)
+
+`src/board/mount.tsx` is the one file `bare.html` and `index.html` both
+construct their board from, and the brief calls for the `SharePanel`
+override to live there ("add the key, nothing else") — so `bare.html` now
+paints the same button `index.html` paints, unstyled on one side and
+shadcn-styled on the other. Ran `tests/stock_pixels.mjs` on this branch to
+measure the actual damage: bare-vs-index goes from 0/0 changed px to
+11,512 (board) / 13,992 (panel) out of ~1.4M total — all of it the button,
+confirmed by inspecting `tests/out/diff-bare-vs-index-*.png`. Left
+unfixed: `tests/stock_pixels.mjs` is explicitly out of this branch's edit
+list (M2's peer is mid-flight on it on `main`), and the fix is a product
+decision — teach the gate to click through / mask the SharePanel zone,
+seed `bare.html` a second no-button variant, or accept a non-zero floor —
+that belongs to whoever reconciles M2 and M4 on `main`, not to a worktree
+that isn't merging today.
+
+### Paint-override check: SKIPPED, not faked
+
+Item (b) of the journey brief writes a `systemSketchPrimitiveOverride` meta
+key onto the probe rectangle and expects it to sort first with a non-zero
+diff — but that only means something once a `ShapeUtil.configure()` reads
+that key, which is M2's job. `git log main` is still at 29b478d (M1) as of
+this run, and `src/inspector/configuredUtils.ts` doesn't exist yet — only
+`src/inspector/inspectorModel.ts` and `overrides.ts` sit untracked on `main`.
+Writing the meta key today would render on *neither* side (a null diff would
+look identical to "the override worked and stock ignores it", which is
+exactly the failure mode a real gate has to refuse to confuse) — so
+`tests/compat_smoke.mjs` checks for `configuredUtils.ts` at run time and
+marks that row `SKIPPED: ...` with the reason inline, rather than asserting
+something it can't yet measure. Re-run once M2 lands the configured utils.
