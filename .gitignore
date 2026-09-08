@@ -1,0 +1,6 @@
+node_modules
+dist
+tests/out/
+reports/media/
+.review-runtime/
+*.local
