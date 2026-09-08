@@ -331,7 +331,15 @@ export function ResizeHandle({ width, onWidth }: { width: number; onWidth(next: 
 			aria-valuemin={DOCK_WIDTH_MIN}
 			aria-valuemax={DOCK_WIDTH_MAX}
 			tabIndex={0}
-			className="absolute top-0 bottom-0 left-0 -ml-1 w-2 shrink-0 cursor-col-resize touch-none"
+			// WHY `z-10`: this handle straddles the dock's own left edge (half
+			// outside it, half in), and it renders BEFORE the Tabs below it in
+			// JSX — normal stacking paints that later sibling on top wherever
+			// the two overlap, which silently ate every pointer event the
+			// overlapping sliver received (measured: drag produced zero width
+			// change, no console error, because the handle never saw the
+			// pointerdown at all). A z-index lifts it above the tab bar/content
+			// only in that shared strip; it never needs to beat a popover.
+			className="absolute top-0 bottom-0 left-0 z-10 -ml-1 w-2 shrink-0 cursor-col-resize touch-none"
 			onPointerDown={(event) => {
 				event.currentTarget.setPointerCapture(event.pointerId)
 				dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width }

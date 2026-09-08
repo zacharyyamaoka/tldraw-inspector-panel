@@ -135,6 +135,164 @@ async function captureFullDock(page, path) {
   await delay(150)
 }
 
+/**
+ * The variants brief's four mandatory-behaviour checks, plus the "core
+ * subset" it names for re-running under every variant: rows present, scrub
+ * W by dragging the MIDDLE of the field (not the glyph), click-without-move
+ * puts the caret in the input, resize to 360 survives a reload, and the
+ * explicit-ink/no-clip assertions. Run once per variant (1 default, 2, 3)
+ * against fresh pages so a failure in one variant's layout (a Select instead
+ * of a segmented row, say) can't be masked by state left over from another.
+ */
+async function runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, variant) {
+  const label = `variant ${variant}`
+  const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}` })
+  await waitFor(page, 'window.__lab && window.__lab.ready === true', `${label} ready`, 20000)
+  await delay(500)
+  await selectShape(page, RECT_ID)
+  await delay(150)
+
+  const ids = await testIds(page)
+  checklist.add(`${label}: rows present (W field, variant picker)`, ids.has('inspector-field-w') && ids.has(`inspector-variant-${variant}`))
+
+  // Mandatory #2: the WHOLE field scrubs, not just its glyph — drag starting
+  // at the field's own centre, well clear of the leading glyph/prefix.
+  {
+    const before = await getShape(page, RECT_ID)
+    const box = await reveal(page, '[data-testid="inspector-field-w"]')
+    await drag(page, { x: box.cx, y: box.cy }, { x: box.cx + 60, y: box.cy })
+    await delay(150)
+    const after = await getShape(page, RECT_ID)
+    checklist.add(`${label}: dragging the MIDDLE of the W field scrubs it`, after.props.w !== before.props.w)
+    await evaluate(page, 'void window.__lab.editor.undo()')
+    await delay(150)
+  }
+
+  // Same contract's other half: a click that never crosses the 2px
+  // threshold is `startEdit()`, not a scrub — the caret lands in the input.
+  {
+    await evaluate(page, 'document.activeElement && document.activeElement.blur()')
+    await delay(80)
+    await clickElement(page, '[data-testid="inspector-field-x"]')
+    await delay(150)
+    const active = await evaluate(page, `document.activeElement && document.activeElement.dataset && document.activeElement.dataset.testid`)
+    checklist.add(`${label}: click without drag puts the caret in the input (active: ${active})`, active === 'inspector-number-x')
+    await evaluate(page, 'document.activeElement && document.activeElement.blur()')
+    await delay(80)
+  }
+
+  // Mandatory #3: explicit ink. `align` is the one segmented row every
+  // variant keeps as a segmented control (3 options never clears V3's
+  // Select threshold), so it is the one cross-variant place to read an
+  // UNPRESSED segment's colour.
+  const inkReadings = () => evaluate(page, `JSON.stringify((() => {
+    const dockEl = document.querySelector('[data-testid="inspector"]')
+    function probe(cssVar) {
+      const el = document.createElement('span')
+      el.style.color = cssVar
+      dockEl.appendChild(el)
+      const value = getComputedStyle(el).color
+      el.remove()
+      return value
+    }
+    const unpressedSegment = document.querySelector('[data-testid^="inspector-segment-align-"][data-state="off"]')
+    const swatch = document.querySelector('[data-testid="inspector-swatch-color-black"]')
+    const numberInput = document.querySelector('[data-testid="inspector-number-w"]')
+    const textInput = document.querySelector('[data-testid="inspector-text-url"]')
+    const header = document.querySelector('[data-testid="inspector-group-layer"]')
+    return {
+      surface: probe('var(--v-surface)'),
+      muted: probe('var(--v-muted)'),
+      segment: unpressedSegment ? getComputedStyle(unpressedSegment).color : null,
+      swatch: swatch ? getComputedStyle(swatch).color : null,
+      numberInput: numberInput ? getComputedStyle(numberInput).color : null,
+      textInput: textInput ? getComputedStyle(textInput).color : null,
+      headerText: header ? getComputedStyle(header).color : null,
+      dockBg: getComputedStyle(dockEl).backgroundColor,
+    }
+  })())`).then(JSON.parse)
+
+  for (const mode of ['light', 'dark']) {
+    if (mode === 'dark') {
+      await evaluate(page, `window.__lab.editor.user.updateUserPreferences({ colorScheme: 'dark' })`)
+      await delay(200)
+    }
+    const r = await inkReadings()
+    // The theme table's own rule (kit.tsx's segmentItemClass): unpressed is
+    // muted, everything else drawing text/glyphs is the dock's surface ink.
+    checklist.add(`${label} ${mode}: unpressed segment ink equals --v-muted (${r.segment})`, r.segment === r.muted)
+    checklist.add(`${label} ${mode}: swatch button ink equals --v-surface`, r.swatch === r.surface)
+    checklist.add(`${label} ${mode}: number input ink equals --v-surface`, r.numberInput === r.surface)
+    checklist.add(`${label} ${mode}: text input ink equals --v-surface`, r.textInput === r.surface)
+    const ratio = contrastRatio(r.headerText, r.dockBg)
+    checklist.add(`${label} ${mode}: section header contrast ${ratio.toFixed(2)}:1 (>= 4.5:1)`, ratio >= 4.5)
+  }
+  await evaluate(page, `window.__lab.editor.user.updateUserPreferences({ colorScheme: 'light' })`)
+  await delay(150)
+
+  // Mandatory #4: nothing clips at the 240px floor. Drag the resize handle
+  // down to 240 first (default 280 on a fresh, `?seed=`-skipped-persistence
+  // load — theme.ts's own WHY) then re-measure every row.
+  {
+    const handleBox = await elementBox(page, '[data-testid="inspector-resize-handle"]')
+    await drag(page, { x: handleBox.cx, y: handleBox.cy }, { x: handleBox.cx + 40, y: handleBox.cy })
+    await delay(200)
+    const width = await evaluate(page, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`)
+    const overflow = await evaluate(page, `JSON.stringify((() => {
+      const dock = document.querySelector('[data-testid="inspector"]').getBoundingClientRect()
+      const rows = [...document.querySelectorAll('[data-testid^="inspector-segment-"], [data-testid^="inspector-tile-"], [data-testid^="inspector-field-"]')]
+      return rows
+        .map((el) => { const r = el.getBoundingClientRect(); return { id: el.dataset.testid, right: r.right } })
+        .filter((r) => r.right > dock.right + 0.5)
+    })())`).then(JSON.parse)
+    checklist.add(
+      `${label}: nothing clips at ${Math.round(Number(width))}px width (${overflow.length === 0 ? 'none clipped' : overflow.map((r) => r.id).join(', ')})`,
+      overflow.length === 0,
+    )
+  }
+  page.close()
+
+  // Mandatory #1: drag-to-resize, persisted across a reload. Run on a PLAIN
+  // (non-seeded) load — theme.ts's `readStoredDockWidth`/`writeStoredDockWidth`
+  // are no-ops under `?seed=`, on purpose, the same rule `persistenceKey`
+  // already follows (mount.tsx) — so persistence can only be observed here.
+  // Safe against "never point a test at Zach's real board": this whole
+  // journey runs its own throwaway Chrome profile against a `vite preview`
+  // it started itself, never Zach's browser or `npm run dev`.
+  {
+    const page2 = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize ready`, 20000)
+    await delay(300)
+    // WHY clear + reload before dragging: this whole block runs on a
+    // non-seeded, persistence-ON route (see the comment above), and this
+    // one Chrome profile/session is shared across every variant in the
+    // `for (const variant of [1, 2, 3])` loop below — an EARLIER variant's
+    // own drag-to-360 would otherwise still be sitting in localStorage,
+    // making this variant's drag start from 360 instead of the documented
+    // 280 default (measured: variant 2 read 440, exactly 360 + this
+    // gesture's own +80).
+    await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.dockWidth')`)
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize ready (cleared)`, 20000)
+    await delay(300)
+    const handleBox = await elementBox(page2, '[data-testid="inspector-resize-handle"]')
+    // Left is wider — the dock is right-anchored (kit.tsx's ResizeHandle WHY).
+    await drag(page2, { x: handleBox.cx, y: handleBox.cy }, { x: handleBox.cx - 80, y: handleBox.cy })
+    await delay(200)
+    const widthAfterDrag = Number(await evaluate(page2, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
+    checklist.add(`${label}: dragging the resize handle widens the dock to ~360px (now ${widthAfterDrag})`, Math.abs(widthAfterDrag - 360) < 4)
+
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize reload ready`, 20000)
+    await delay(300)
+    const widthAfterReload = Number(await evaluate(page2, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
+    checklist.add(`${label}: resizing to 360 survives a reload (now ${widthAfterReload})`, Math.abs(widthAfterReload - 360) < 4)
+    page2.close()
+  }
+}
+
 async function main() {
   await rm(outDir, { recursive: true, force: true })
   await mkdir(outDir, { recursive: true })
@@ -527,6 +685,11 @@ async function main() {
       )
       await captureFullDock(stockPage, join(outDir, 'inspector-dock-stock-route.png'))
       stockPage.close()
+
+      /* ---------------------------------------- mandatory behaviours × variants */
+      for (const variant of [1, 2, 3]) {
+        await runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, variant)
+      }
     } finally {
       session.kill()
     }

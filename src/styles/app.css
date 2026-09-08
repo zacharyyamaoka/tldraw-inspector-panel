@@ -293,10 +293,27 @@
    `color-scheme`-dependent — the exact bug `TileGroup`'s own WHY in
    Inspector.tsx already names for the geometry tiles. Mandatory behaviour
    #3 in the variants brief generalizes that fix to every control kit.tsx
-   draws: swatch buttons, segment items, list-row buttons, both field kinds. */
-[data-testid="inspector"][data-variant] button,
-[data-testid="inspector"][data-variant] input {
-  color: var(--v-surface);
+   draws: swatch buttons, segment items, list-row buttons, both field kinds.
+
+   WHY wrapped in `:where(...)` AND inside `@layer utilities`, not either
+   alone: this rule's own job is to be the FALLBACK, not the answer —
+   kit.tsx's `segmentItemClass` deliberately paints an UNPRESSED segment
+   `text-[var(--v-muted)]`, distinct from this rule's surface default.
+   `:where()` alone was not enough — a plain, UNLAYERED rule beats every
+   Tailwind utility regardless of specificity, `:where()` included, because
+   this file imports Tailwind's own utilities into `layer(utilities)` (top
+   of file) and cascade layers settle precedence BEFORE specificity even gets
+   compared: any unlayered rule always outranks a layered one. Measured with
+   only `:where()`: still every unpressed segment read as pressed, because
+   this rule sat outside every layer. Moving it into the SAME `utilities`
+   layer Tailwind's own classes occupy is what lets `:where()`'s zero
+   specificity actually mean "lowest priority" instead of "unconditional
+   winner" — the two fixes address different axes of the cascade and neither
+   alone was sufficient. */
+@layer utilities {
+  :where([data-testid="inspector"][data-variant]) :where(button, input) {
+    color: var(--v-surface);
+  }
 }
 
 /* The resize handle (open-pencil's splitter.ts): a 1px divider at rest,
