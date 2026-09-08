@@ -1,5 +1,113 @@
 # Log
 
+## 2026-09-07 — M2: the panel on the seam, with the ported model
+
+Landed the M2 brief: `components={{ StylePanel: Inspector }}` on the chrome
+entry, the ported model/overrides/ScrubNumber/tests from SystemSketch
+(`77907974`), a from-scratch shadcn/Base UI view over that model, the paint
+seam + rounded rect reproduced in `src/inspector/configuredUtils.ts`, the
+pixel gate extended with a DOM-read dock mask, and a 17-check real-browser
+journey (`tests/inspector_smoke.mjs`) covering both routes. `npm run check`
+is green: `tsc -b`, 97 vitest tests (71 new), the pixel gate (0 / 0 / 763
+changed px outside a ~311–329k px² masked dock — see the table `test:pixels`
+prints), and `test:inspector` (17/17).
+
+**Field count.** `inspectorModel.ts` carries **50** `FieldSpec` entries — the
+donor's 51 minus `arrowRouting` (Slant), SystemSketch's own arrow util and
+not a stock tldraw capability. Confirmed by counting the file's own
+`paintField`/`styleField`/`propField` calls (34) plus inline `FieldSpec`
+literals (16). A default rectangle on the chrome route offers every row its
+`applies` predicate admits, including the seven `paint` rows
+(`fillOpacity`, exact stroke colour/width/roundness, `labelColor`,
+typeface/size/line-height/padding, `textOutline`, `cornerRadius`); the same
+rectangle on the stock route (`bare.html?inspector=1`) offers every style/prop
+row and **none** of those seven — `paintReaches(shape, editor)` correctly
+reads `false` there, because `configuredUtils.ts`'s
+`CONFIGURED_SHAPE_UTILS` was never registered on that canvas.
+
+**Ported verbatim vs. rewritten.**
+
+| File | Verbatim from `77907974` | Rewritten here |
+|---|---|---|
+| `src/inspector/inspectorModel.ts` | Yes, two edits (inline `sharedValueAcross`, drop `arrowRouting` + its imports) | — |
+| `src/inspector/overrides.ts` | Yes, byte-for-byte | — |
+| `src/inspector/ScrubNumber.tsx` | Logic (parser, `quantize`, scrub-origin, `ENGINE_REASONS`) | Skin: Tailwind classes + shadcn `InputGroup`/`InputGroupAddon` in place of `primitive-inspector.css` classes |
+| `src/inspector/glyphs.ts` | Yes, byte-for-byte (`primitiveGlyphs.ts`) | — |
+| `src/inspector/inspectorModel.test.ts`, `overrides.test.ts`, `ScrubNumber.test.ts` | Yes, import paths only (plus one `erasableSyntaxOnly` fix, below) | — |
+| `src/inspector/configuredUtils.ts` | No — reproduces the *paint seam* and the *rounded rect* from `stockPrimitiveVisuals.ts`/`excalidrawInterop.ts`/`systemSketchArrow.tsx` | Everything else in those three files (Excalidraw import fidelity, Block "detached composite" paint, async-edge dash cadence, the slanted arrow) is SystemSketch/Block-specific and left out |
+| `src/inspector/Inspector.tsx` | No — `PrimitiveInspector.tsx` is reference-only per the brief | Whole view, shadcn/Base UI parts per §5 of the plan |
+
+**The `react-colorful` decision.** `HexAlphaColorPicker` (MIT, ~3 kB) is the
+only new dependency. The plan's §5 control-mapping table flagged Kibo's
+colour picker as installing but mis-typing against Base UI's `Select` and
+dragging in `radix-ui` — using the picker library underneath it directly,
+as recommended, meant `react-colorful` rather than Kibo's wrapper.
+
+**Two real bugs the journey caught, not inferred:**
+
+1. `ScrubNumber.tsx`'s hand-styled `NumberField.Input` had no `min-w-0`. A
+   native `<input>`'s intrinsic width and a flex item's default `min-width:
+   auto` mean it refused to shrink inside a narrow paired grid cell — its
+   overflow painted past the `InputGroup`'s own border, invisibly (no
+   distinguishing background), and sat on top of the "×" clear button drawn
+   immediately after it in the DOM. `elementFromPoint` at the clear button's
+   own centre returned the `<input>`. shadcn's own `Input` sets `min-w-0` on
+   every field for the same reason; this one is hand-styled and needed its
+   own copy. Caught by `clearing fillOpacity restores the original fill`
+   silently doing nothing.
+2. **The §2.2 class recurred, one layer up.** The ported model already
+   fences every write to `shapeIds`, but the *view*'s `onChange`/`onClear`
+   closures were rebuilt fresh on every render from the live `model` — and
+   `useValue`'s external-store subscription (`tldraw`'s own reactive store,
+   not React's synthetic event system) is not batched with the native
+   `pointerdown` that calls `editor.select(...)`. Clicking a second shape
+   re-rendered the panel with the *new* selection's model synchronously,
+   **before** the browser's own focus-shift dispatched `blur` on the
+   still-focused field — so the blur committed through a closure that had
+   already swapped to the wrong shape. `InspectorPanel` now freezes its
+   model reference in a ref while focus is inside the dock **and** the
+   selection is about to change, adopting a fresh reading only once nothing
+   here is focused (or the selection is unchanged, so a value that just
+   committed on Enter without blurring still shows immediately). Caught by
+   `opacity commits to the shape the row was showing (A), not the live
+   selection`, which failed with A untouched and B silently taking the
+   value — the exact defect shape the donor's own work order describes.
+
+**Deviations, and why:**
+
+- **Kept the donor's tab indentation in the three verbatim-ported files**
+  (`inspectorModel.ts`, `overrides.ts`, `glyphs.ts`), against this repo's own
+  2-space convention. The brief said "exactly two edits" to the model file
+  and "byte-for-byte" for the others; a repo-wide reformat was out of scope
+  and would have made future re-diffs against the donor harder to read, not
+  easier.
+- **`inspectorModel.test.ts`'s `FakePaintUtil` fixture** used the donor's
+  constructor-parameter shorthand (`constructor(private readonly shape:
+  FakeShape)`), which this repo's `tsconfig` (`erasableSyntaxOnly`, TS 6)
+  forbids as non-erasable syntax. Spelled out as a field + plain assignment;
+  behaviour unchanged.
+- **`defaultGeoFillColor` in `configuredUtils.ts`** reproduces stock
+  tldraw's own geo fill formula (`GeoShapeUtil.tsx`'s
+  `getDefaultDisplayValues`, `getColorValue(colors, color,
+  DEFAULT_FILL_COLOR_NAMES[fill])`) rather than the donor's
+  `appearance/fillPaint.ts`. That donor file is a FigJam-flavoured
+  *reinterpretation* of solid/semi fill (a wash, not tldraw's own pale tint)
+  — a taste choice, not part of the seam — so it was left out per "keep
+  only what makes the paint seam and the rounded rect work on stock
+  tldraw." Without *some* resolved default, though, a `fillOpacity`-only
+  override (no `fillColor` set) had nothing to composite its alpha onto and
+  silently painted nothing — so this one small, generic, non-taste helper
+  was added to give it real stock paint to composite over.
+- **The `systemsketch-primitive-inspector` testid was renamed to
+  `inspector-panel`** per the M2 brief's explicit instruction, on both the
+  view and the (from-scratch, since no donor journey exists for this repo's
+  own routes) `tests/inspector_smoke.mjs`.
+- **No donor test needed a SystemSketch-only import to skip.** Both ported
+  unit-test files (`inspectorModel.test.ts`, `ScrubNumber.test.ts`) and
+  `overrides.test.ts` use only a hand-built fixture editor and pure
+  functions; none referenced `SystemSketchArrowShapeUtil`, Block, or
+  Excalidraw interop, so nothing was dropped from them.
+
 ## 2026-09-07 — M1: scaffold + pixel gate
 
 Landed the whole M1 brief: Vite/React 19/TypeScript scaffold, tldraw@5.3.2 +

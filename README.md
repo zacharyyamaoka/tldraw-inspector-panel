@@ -23,6 +23,7 @@ safe. Full plan and rationale:
 | vite | scaffold default | **8.2.2** |
 | typescript | scaffold default | **~6.0.2** (tsc 6.0.3) |
 | vitest / pixelmatch / pngjs | — | **5.0.0 / 7.2.0 / 7.0.0** |
+| react-colorful (M2, the Inspector's colour popup) | 5.6.1 | **5.6.1** |
 
 Zero `radix-ui` / `@radix-ui/*` anywhere in `package.json` or `src/` — every
 `src/components/ui/*.tsx` file shadcn generated imports exclusively from
@@ -34,8 +35,12 @@ Zero `radix-ui` / `@radix-ui/*` anywhere in `package.json` or `src/` — every
    through its own supported seams. This milestone's whole job is proving the
    chrome stack around it (Tailwind, shadcn, Base UI) is inert — see
    `tests/stock_pixels.mjs`.
-2. **The model decides, the view draws.** *(arrives in a later milestone —
-   the Figma-shaped inspector's state lives outside its React components.)*
+2. **The model decides, the view draws.** Live as of M2:
+   `src/inspector/inspectorModel.ts` is 1,182 lines of plain TypeScript with
+   no React and no tldraw-flavoured JSX — 50 `FieldSpec` entries, each with
+   `applies`/`read`/`write`, answering every question of *what a shape can
+   be*. `src/inspector/Inspector.tsx` renders whatever that model hands back
+   and nothing else; it does not know what a rectangle is.
 3. **Consumed by registry.** *(arrives in a later milestone — inspector
    panels register into a shared surface rather than being hand-wired.)*
 
@@ -54,22 +59,40 @@ drifting to another port if 5180 is taken).
 npm --prefix /home/bam/tldraw_styling_lab run check
 ```
 
-Runs `tsc -b`, the vitest suite (`theme_bridge.test.ts` — every `--tl-*` name
-`src/styles/app.css` references is checked against `node_modules/tldraw/
-tldraw.css`), and the pixel gate (`tests/stock_pixels.mjs`, see below) in
-sequence. `test:unit` and `test:pixels` run the vitest suite / the pixel gate
-alone.
+Runs `tsc -b`, the vitest suite (`theme_bridge.test.ts` plus the M2 unit
+suites below), the pixel gate (`tests/stock_pixels.mjs`), and the Inspector
+journey (`tests/inspector_smoke.mjs`) in sequence. `test:unit`, `test:pixels`
+and `test:inspector` run any one alone.
 
 **The pixel gate** builds the app, serves `dist/` on a free port, and drives
 headless Chrome (offline, self-hosted assets — no CDN dependency) through the
 identical seeded board at `bare.html` (tldraw's own CSS only) and `index.html`
 (the full chrome stack). `pixelmatch` at threshold 0 must find **zero**
-changed pixels between them, in both the idle-board and style-panel-open
-states. It then loads `index.html?seed=stock&preflight=1` — the one CSS file
+changed pixels between them outside the Inspector's own dock (see below), in
+both the idle-board and panel-open states. It then loads
+`index.html?seed=stock&preflight=1` — the one CSS file
 (`tailwindcss/preflight.css`) the whole layers-only approach exists to keep
-out — and asserts *that* diff comes back non-zero, as a mutation check that
-the gate can actually fail. Captured PNGs and diff images land in
-`tests/out/` (gitignored).
+out — and asserts *that* diff comes back non-zero outside the dock too, as a
+mutation check that the gate can actually fail. Captured PNGs and diff images
+land in `tests/out/` (gitignored).
+
+**The dock mask, since M2:** `index.html` now mounts the Figma-shaped
+`Inspector` (below) in place of tldraw's own style panel, so the two entries
+differ inside that one 280px-wide overlay by design — it is an absolute
+overlay *inside* `.tl-container`, never a layout sibling, specifically so it
+never shifts the canvas's own viewport and the camera `bare.html` and
+`index.html` each compute stays identical. The gate reads that rectangle
+straight off the DOM on every capture (`[data-testid="inspector"]` on the
+chrome route, tldraw's own `.tlui-style-panel__wrapper` on bare's once a
+shape is selected) and zeroes it in **both** images before diffing, so a real
+regression anywhere else on the 1440×960 canvas still fails at threshold 0.
+The table it prints names the masked area on every run.
+
+**The Inspector journey** (`tests/inspector_smoke.mjs`) drives the built app
+in headless Chrome against `index.html?seed=stock` (paint seam installed) and
+`bare.html?seed=stock&inspector=1` (the stock route, seam withheld) — 17
+checks, every one read off the editor's own record or the painted SVG, never
+off the panel's own DOM alone.
 
 ## URL switches (dev-only, read once at startup)
 
@@ -77,6 +100,7 @@ the gate can actually fail. Captured PNGs and diff images land in
 |---|---|
 | `?seed=stock` | seeds the nine-shape probe board (fixed shape ids) instead of loading the persisted board, and skips `persistenceKey` entirely so the run never touches, or creates, real IndexedDB state |
 | `?preflight=1` | (`index.html` only) dynamically imports `tailwindcss/preflight.css` — exists solely so the pixel gate's mutation check has something real to catch; never loads on a normal visit |
+| `?inspector=1` | (`bare.html` only) mounts the Figma-shaped `Inspector` on the bare canvas — no `CONFIGURED_SHAPE_UTILS`, so every `paint`-sourced row withholds itself (`paintReaches` false in `inspectorModel.ts`) instead of writing `meta` that changes no pixel. `index.html` always mounts it; this switch exists only to prove the stock route is honest. |
 
 Every mount exposes `window.__lab = { editor, ready: true }` once tldraw is
 mounted (and seeded, if `?seed=` was present) — that's what tests wait on.
@@ -92,3 +116,66 @@ mounted (and seeded, if `?seed=` was present) — that's what tests wait on.
 Both mount through `src/board/mount.tsx` and seed through
 `src/board/seed.ts` — the only two files either entry can construct a board
 from, so they cannot silently drift apart.
+
+## The Inspector (M2)
+
+`src/board/mount.tsx`'s `Board` takes two props the two entries set
+differently: `withInspector` (mount `src/inspector/Inspector.tsx` in place of
+tldraw's `DefaultStylePanel`, through the stock `components={{ StylePanel
+}}` seam) and `withConfiguredUtils` (register `CONFIGURED_SHAPE_UTILS` —
+`src/inspector/configuredUtils.ts` — instead of tldraw's defaults). `index.html`
+always sets both; `bare.html` sets neither unless `?inspector=1` sets the
+first alone, which is what makes the stock route (below) exist at all.
+
+- **`src/inspector/inspectorModel.ts`** (React-free) — ported verbatim from
+  SystemSketch (`77907974`, `src/inspector/primitiveInspectorModel.ts`) with
+  two edits: the `sharedValueAcross` fold it imported is inlined, and the
+  `arrowRouting` (Slant) field — SystemSketch's own arrow util, not a stock
+  tldraw capability — is dropped along with its imports. 50 fields (51 minus
+  Slant).
+- **`src/inspector/overrides.ts`** — ported verbatim from
+  `primitiveOverrides.ts`: the `meta` contract every `paint`-sourced row
+  writes through, kept under the *same* key
+  (`systemSketchPrimitiveOverride`) the donor uses, so a board's overrides
+  round-trip between the two apps.
+- **`src/inspector/configuredUtils.ts`** — the paint seam and the rounded
+  rectangle (`systemsketch-rounded-rect`, same name, same round-trip
+  argument), reproduced from `stockPrimitiveVisuals.ts` /
+  `excalidrawInterop.ts` / `systemSketchArrow.tsx` with every SystemSketch/
+  Block-specific derived-default (the "detached composite" paint, the
+  async-edge dash cadence, Excalidraw import fidelity, the slanted arrow)
+  left out. One exception: `defaultGeoFillColor` reproduces stock tldraw's
+  *own* geo fill formula (from `GeoShapeUtil.tsx`, not a SystemSketch taste)
+  so a `fillOpacity`-only override has a real colour to composite its alpha
+  onto.
+- **`src/inspector/ScrubNumber.tsx`** — the expression parser, `quantize`,
+  and the `auto`-from-engine-value scrub origin ported logic-verbatim onto
+  Base UI's `NumberField`, re-skinned with Tailwind and shadcn's
+  `InputGroup`.
+- **`src/inspector/Inspector.tsx`** — the view. Renders `model.groups` in the
+  model's own fixed order (Layer · Shape · Fill · Stroke · Text · Arrow ·
+  Sticky · Highlighter · Frame), one shadcn `Collapsible` section per group.
+  Every control kind but two is a shadcn/Base UI part — swatches (a 7-col
+  grid of `Toggle`, painted from the live theme) and the number parser above
+  are hand-rolled on purpose; everything else (scrub, popover, select,
+  toggle group, switch, scroll area) is a package. Colour rows use
+  `react-colorful`'s `HexAlphaColorPicker` — the only new dependency this
+  milestone took.
+- **The stock route** — `bare.html?inspector=1` mounts the same `Inspector`
+  on a canvas with none of `CONFIGURED_SHAPE_UTILS` installed, so every
+  `paint` row withholds itself instead of writing `meta` that changes no
+  pixel (`paintReaches(shape, editor)` in `inspectorModel.ts`). One field
+  list, one predicate, two routes.
+
+Two real bugs the Inspector journey (`tests/inspector_smoke.mjs`) caught, not
+inferred: a hand-styled `NumberField.Input` missing `min-w-0` let a
+193px-wide `<input>` silently overflow its own bordered box and eat clicks
+meant for the "×" clear button drawn beside it (fixed at `ScrubNumber.tsx`);
+and a field committing on blur could commit to the *wrong* shape when the
+blur-causing click landed on a different one, because `editor.select(...)`
+re-renders the panel — via `useValue`'s external-store subscription, outside
+React's batching — before the browser's own focus-shift dispatches that
+blur. `Inspector.tsx`'s `InspectorPanel` freezes its model reference while
+focus is inside the dock and the selection is about to change, and only
+adopts a fresh reading once nothing here is focused (or the selection is
+unchanged) — see the `WHY` there and docs/log.md's M2 entry.
