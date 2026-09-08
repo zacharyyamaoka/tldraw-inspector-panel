@@ -66,11 +66,22 @@ export function BoardMenuVariant() {
  */
 /** Opening Settings, in one place, so the menu item and the shortcut cannot drift. */
 export function useOpenSettings() {
-	const { addDialog } = useDialogs()
+	const { addDialog, removeDialog } = useDialogs()
 	return useCallback(() => {
-		addDialog({ component: ({ onClose }) => <SettingsDialog onClose={onClose} /> })
-	}, [addDialog])
+		// A FIXED id, so a second open replaces the first instead of stacking a
+		// second modal layer on top of it. Holding ctrl+, or pressing it while
+		// Settings was already up used to produce two dialogs, with Escape
+		// dismissing only the top one — leaving a modal the user could not see a
+		// way out of.
+		removeDialog(SETTINGS_DIALOG_ID)
+		addDialog({
+			id: SETTINGS_DIALOG_ID,
+			component: ({ onClose }) => <SettingsDialog onClose={onClose} />,
+		})
+	}, [addDialog, removeDialog])
 }
+
+const SETTINGS_DIALOG_ID = 'lab-settings'
 
 export function SettingsDialogVariant() {
 	const openSettings = useOpenSettings()
@@ -83,6 +94,8 @@ export function SettingsDialogVariant() {
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.key !== ',' || !(event.ctrlKey || event.metaKey)) return
+			// Key repeat fires this dozens of times while held.
+			if (event.repeat) return
 			const target = event.target
 			if (target instanceof HTMLElement
 				&& (target.matches('input, textarea, select') || target.isContentEditable)) return

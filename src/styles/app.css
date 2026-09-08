@@ -423,7 +423,12 @@
   border: 0;
   background: transparent;
   height: 40px;
-  max-width: 240px;
+  /* `min(240px, 34vw)`: a long board name must not be what pushes the row off a
+     narrow screen. Measured at a 360px viewport with a 39-character name — the
+     row overflowed by 184px before the breakpoint gate came back, and by 4px
+     after, which is this cap's job to absorb. */
+  max-width: min(240px, 34vw);
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;

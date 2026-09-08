@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from 'react'
 import {
+	PORTRAIT_BREAKPOINT,
 	TldrawUiRow,
 	TldrawUiToolbar,
+	useBreakpoint,
 	useEditor,
 	useTldrawUiComponents,
 	useValue,
@@ -149,6 +151,20 @@ export function MenuPanelWithName() {
 	// File or Settings at all. Reading the configured components is what keeps
 	// this panel a LAYOUT change rather than a second component registry.
 	const { MainMenu, PageMenu, QuickActions, ActionsMenu } = useTldrawUiComponents()
+	const editor = useEditor()
+	const breakpoint = useBreakpoint()
+
+	// WHY this gate is copied from DefaultMenuPanel rather than left out: tldraw
+	// HIDES the quick actions below tablet width, and dropping that made the bar
+	// run 184px off a 360px viewport — measured. Rendering them unconditionally
+	// is not "one more control", it is the whole responsive behaviour of the row
+	// removed. Same expression as the engine's, so it moves when tldraw's does.
+	const showQuickActions = editor.options.actionShortcutsLocation === 'menu'
+		? true
+		: editor.options.actionShortcutsLocation === 'toolbar'
+			? false
+			: breakpoint >= PORTRAIT_BREAKPOINT.TABLET
+
 	return (
 		<nav className="tlui-menu-zone">
 			<TldrawUiRow>
@@ -159,7 +175,7 @@ export function MenuPanelWithName() {
 				<DocumentNamePanel />
 				<span aria-hidden="true" className="lab-menu-divider" />
 				{PageMenu ? <PageMenu /> : null}
-				{QuickActions || ActionsMenu ? (
+				{showQuickActions && (QuickActions || ActionsMenu) ? (
 					<TldrawUiToolbar orientation="horizontal" label="Actions">
 						{QuickActions ? <QuickActions /> : null}
 						{ActionsMenu ? <ActionsMenu /> : null}

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { DefaultHelperButtons } from 'tldraw'
 import {
 	MAX_SPEED_PERCENT,
 	MIN_SPEED_PERCENT,
@@ -18,10 +19,33 @@ import { isTuningOpen, setTuningOpen, subscribeToTuning } from './tuningStore'
  * that swallowed pointer events would recreate the modal problem in a smaller
  * rectangle.
  *
+ * To be precise, since an earlier version of this comment overclaimed: the CARD
+ * itself does take the gestures that start on it — it has to, or its sliders
+ * would not work. What is guaranteed is that the rest of the panel's rectangle
+ * is transparent to the canvas, and that the card is small and parked in the
+ * one corner nothing else needs.
+ *
  * Bottom-left on purpose: the inspector owns the right edge, the toolbar owns
  * the bottom centre, and the menu owns the top-left — this is the one corner
  * where a persistent panel does not cover something you need while tuning.
  */
+/**
+ * Mounted as `components.HelperButtons`, so it must RENDER tldraw's own first.
+ *
+ * WHY: that slot is not empty. It carries "Back to content", "Exit pen mode"
+ * and "Stop following" — the controls that rescue someone who has panned the
+ * board off-screen. Replacing the slot silently deleted all three, which is a
+ * worse bug than the one this panel fixes.
+ */
+export function HelperButtonsWithTuning() {
+	return (
+		<>
+			<DefaultHelperButtons />
+			<TuningPanel />
+		</>
+	)
+}
+
 export function TuningPanel() {
 	const open = useSyncExternalStore(subscribeToTuning, isTuningOpen, isTuningOpen)
 	const settings = useSyncExternalStore(subscribeToGestureSettings, getGestureSettings, getGestureSettings)

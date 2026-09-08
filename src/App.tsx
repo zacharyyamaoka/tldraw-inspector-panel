@@ -2,7 +2,7 @@ import type React from 'react'
 import { Board, readSeedMode } from './board/mount'
 import { CONFIGURED_SHAPE_UTILS } from './inspector/configuredUtils'
 import { MenuPanelWithName } from './chrome/DocumentNamePanel'
-import { TuningPanel } from './chrome/TuningPanel'
+import { HelperButtonsWithTuning } from './chrome/TuningPanel'
 import { LabContextMenu } from './chrome/LabContextMenu'
 import { LabMainMenu } from './chrome/LabMainMenu'
 import { BoardMenuVariant, SettingsDialogVariant } from './chrome/MenuVariants'
@@ -62,7 +62,7 @@ export default function App() {
         MenuPanel: MenuPanelWithName,
         // The live-tuning HUD rides in a slot that is always mounted and never
         // blocks the canvas — see TuningPanel's own WHY.
-        HelperButtons: TuningPanel,
+        HelperButtons: HelperButtonsWithTuning,
       }}
       shapeUtils={CONFIGURED_SHAPE_UTILS}
       themes={seedMode ? undefined : readStoredThemes()}
