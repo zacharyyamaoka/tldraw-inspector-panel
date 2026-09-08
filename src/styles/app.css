@@ -279,6 +279,59 @@
   --v-surface: var(--tl-color-text);
   --v-muted: var(--tl-color-text-3);
 }
+/* ---------------------------------------------------------------- V7 ---
+   "Figma exact" (round 3). The ONLY variant with its own palette, and the
+   only one entitled to one: every other variant repaints open-pencil's or
+   tldraw's colours because its brief varies structure. V7's brief is "try
+   to achieve a pixel for pixel copy of figma", so the colours ARE part of
+   the target and are sampled from Figma's own ui3 surfaces rather than
+   approximated from a neighbouring design system.
+
+   Names mirror Figma's own CSS custom properties (`--color-bg`,
+   `--color-text-secondary`, `--color-icon-tertiary`, …) so a future
+   comparison against a fresh DOM dump is a rename away, not a re-derivation.
+   `--fig-*` rather than `--v-*` on purpose: these do NOT feed the shadcn
+   re-point below, because V7 draws none of the shadcn-shaped controls the
+   other six share. */
+[data-testid="inspector"][data-variant='7'] {
+  --fig-bg: #ffffff;
+  --fig-border: #e6e6e6;
+  --fig-text: #000000;
+  --fig-text-secondary: #666666;
+  --fig-icon: #333333;
+  --fig-icon-tertiary: #b3b3b3;
+  --fig-field-border: #d9d9d9;
+  --fig-hover: #f0f0f0;
+  --fig-selected-bg: #e5e5e5;
+  --fig-focus: #0d99ff;
+
+  /* V7 still needs the shadcn names for the ONE shared control it reuses:
+     `ColorPickerPopover` (the swatch + react-colorful popup). Everything
+     else in the panel is `figmaExact/`'s own markup reading `--fig-*`. */
+  --v-panel: var(--fig-bg);
+  --v-panel-secondary: var(--fig-bg);
+  --v-field: transparent;
+  --v-field-hover: var(--fig-hover);
+  --v-focus: var(--fig-focus);
+  --v-border: var(--fig-border);
+  --v-hover: var(--fig-hover);
+  --v-accent: var(--fig-focus);
+  --v-surface: var(--fig-text);
+  --v-muted: var(--fig-text-secondary);
+}
+.tl-theme__dark [data-testid="inspector"][data-variant='7'] {
+  --fig-bg: #2c2c2c;
+  --fig-border: #383838;
+  --fig-text: #ffffff;
+  --fig-text-secondary: #b3b3b3;
+  --fig-icon: #ffffff;
+  --fig-icon-tertiary: #8c8c8c;
+  --fig-field-border: #545454;
+  --fig-hover: #383838;
+  --fig-selected-bg: #383838;
+  --fig-focus: #0d99ff;
+}
+
 /* The re-point: every variant feeds its --v-* palette back into the shadcn
    token names the existing markup already reads. */
 [data-testid="inspector"][data-variant] {

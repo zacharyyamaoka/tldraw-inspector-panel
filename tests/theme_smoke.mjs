@@ -95,7 +95,7 @@ async function main() {
 
       /* ------------------------------------------------- scalars + colour */
       const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-      await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock` })
+      await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&drawer=open` })
       await waitFor(page, 'window.__lab && window.__lab.ready === true', 'chrome route ready', 20000)
       await delay(500)
 
@@ -165,7 +165,7 @@ async function main() {
       // populates itself. Same throwaway Chrome profile as the rest of this
       // journey (`launchChrome`'s own `mkdtemp`), never Zach's board.
       const plainPage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-      await plainPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html` })
+      await plainPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?drawer=open` })
       await waitFor(plainPage, 'window.__lab && window.__lab.ready === true', 'plain chrome route ready', 20000)
       await delay(400)
 

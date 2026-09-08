@@ -1,5 +1,4 @@
 import { Board, readSeedMode } from './board/mount'
-import { StockCheckButton } from './compat/StockCheckButton'
 import { CONFIGURED_SHAPE_UTILS } from './inspector/configuredUtils'
 import { Inspector } from './inspector/Inspector'
 import { readStoredThemes } from './inspector/themeStorage'
@@ -19,14 +18,15 @@ if (new URLSearchParams(window.location.search).get('preflight') === '1') {
 // of M2 is that its right dock IS the Figma-shaped inspector, not tldraw's
 // own style panel — see docs/log.md's M2 entry.
 //
-// WHY SharePanel: StockCheckButton lives here too, not in board/mount.tsx:
-// M4's first cut wired it as a hard-coded default inside Board itself, which
-// put an unstyled copy of the button on bare.html — the pixel gate's control
-// — since bare.html shares that one mount. M2's own `components`/`shapeUtils`
-// pass-through refactor (see mount.tsx's own WHY) already exists to prevent
-// exactly this: every entry states its own chrome in full, so a control only
-// this route wants belongs in this route's own components map. bare.html
-// passes no components at all and stays untouched.
+// WHY `SharePanel` is gone: the drawer feature's own adversarial-judge round
+// found it moved `DefaultStylePanel` down (y:8 -> y:34, unmasked measurement
+// 22,233px) because M4's `StockCheckButton` lived in `components.SharePanel`
+// — a real flow SIBLING stacked above the style panel in tldraw's own
+// top-right column. `Inspector.tsx` now renders `StockCheckButton` itself,
+// `position: fixed` alongside the drawer tab — never a flow sibling of
+// `DefaultStylePanel` — so nothing pushes the stock panel out of the exact
+// position `bare.html` puts it in. See `Inspector.tsx`'s own WHY on its
+// control cluster.
 //
 // WHY `themes` is read here, in the one entry that owns it, rather than
 // inside `Board`: M3's Theme tab is exactly the kind of chrome
@@ -39,7 +39,7 @@ export default function App() {
   const seedMode = readSeedMode()
   return (
     <Board
-      components={{ StylePanel: Inspector, SharePanel: StockCheckButton }}
+      components={{ StylePanel: Inspector }}
       shapeUtils={CONFIGURED_SHAPE_UTILS}
       themes={seedMode ? undefined : readStoredThemes()}
     />

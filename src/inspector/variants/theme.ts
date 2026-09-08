@@ -26,7 +26,7 @@ import { GEO_GLYPHS } from '../glyphs'
 // below are round 1's own rendering knobs and stay meaningless for 4/5/6,
 // kept at inert defaults only so `VariantTheme` stays one shared shape for
 // the picker/gallery's name+tagline+round fields.
-export type VariantId = 1 | 2 | 3 | 4 | 5 | 6
+export type VariantId = 1 | 2 | 3 | 4 | 5 | 6 | 7
 
 export interface VariantTheme {
 	id: VariantId
@@ -35,8 +35,9 @@ export interface VariantTheme {
 	/** One line, printed in the gallery and nowhere else — not UI copy. */
 	tagline: string
 	/** Which babble round this variant belongs to — what splits the dock
-	 *  picker into "1 2 3 · 4 5 6" (`VariantPicker`, kit.tsx). */
-	round: 1 | 2
+	 *  picker into "1 2 3 · 4 5 6 · 7" (`VariantPicker`, kit.tsx). Round 3
+	 *  has exactly one member on purpose (see `isFigmaExactVariant`). */
+	round: 1 | 2 | 3
 	/** Caption-above-field (V1/V2) vs. letter-prefix-inside-field (V3) for the
 	 *  geometry scalars a prefix reads naturally on (x/y/w/h/rotation/opacity).
 	 *  Round-2 variants (4/5/6) never read this — see the module comment. */
@@ -133,6 +134,19 @@ export const VARIANTS: Record<VariantId, VariantTheme> = {
 		iconControlIds: 'all',
 		selectThreshold: Number.POSITIVE_INFINITY,
 	},
+	7: {
+		id: 7,
+		key: 'figma-exact',
+		name: 'Figma exact',
+		tagline: "Figma's own ui3 panel, rebuilt from its live DOM — icons, grid and labels verbatim.",
+		round: 3,
+		inlinePrefixes: false,
+		// V7 never consults this: it draws Figma's OWN icons (`figmaExact/icons.tsx`)
+		// for the controls Figma gives an icon and Figma's OWN words for the rest,
+		// so "which ids get tldraw's icon set" is not a question it can ask.
+		iconControlIds: new Set<string>(),
+		selectThreshold: Infinity,
+	},
 }
 
 /** Variants 4/5/6 render through `figmaVariants.tsx`, never the round-1
@@ -142,6 +156,14 @@ export const VARIANTS: Record<VariantId, VariantTheme> = {
  *  every call site. */
 export function isFigmaAnatomyVariant(id: VariantId): id is 4 | 5 | 6 {
 	return id === 4 || id === 5 || id === 6
+}
+
+/** Round 3 is ONE variant, not three: Zach stopped asking for options and
+ *  asked for a copy — "try to achieve a pixel for pixel copy of figma".
+ *  There is nothing to babble when the target is a specific existing panel,
+ *  so V7 mounts its own tree (`figmaExact/`) built from Figma's real DOM. */
+export function isFigmaExactVariant(id: VariantId): id is 7 {
+	return id === 7
 }
 
 /** The letter/symbol open-pencil prints INSIDE a V3 field instead of a
@@ -156,11 +178,11 @@ export const INLINE_PREFIXES: Record<string, string> = {
 // variants (4/5/6), not a replacement of 1/2/3 — Zach still audits all six
 // side by side. The default flips to 4 ("Figma rows") because it is the
 // round Zach actually asked for next; 1/2/3 stay reachable at `?variant=1|2|3`.
-const DEFAULT_VARIANT: VariantId = 4
+const DEFAULT_VARIANT: VariantId = 7
 
 function clampVariant(raw: string | null): VariantId {
 	const parsed = Number(raw)
-	return parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4 || parsed === 5 || parsed === 6
+	return parsed === 1 || parsed === 2 || parsed === 3 || parsed === 4 || parsed === 5 || parsed === 6 || parsed === 7
 		? (parsed as VariantId)
 		: DEFAULT_VARIANT
 }

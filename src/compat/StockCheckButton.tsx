@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react'
 import { useEditor, useValue } from 'tldraw'
-import { Button } from '@/components/ui/button'
+import { cn } from 'cn'
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
+import { NATIVE_PANEL_CHROME } from '../inspector/nativeChrome'
 import { StockCheckReport } from './StockCheckReport'
 import { releaseStockCheckResult, runStockCheck, type StockCheckResult } from './stockCheck'
 
@@ -57,17 +58,23 @@ export function StockCheckButton() {
     // straight through to the canvas; caught by tests/compat_smoke.mjs hanging
     // on the report selector rather than by any visible symptom.
     <div className="tlui-share-zone pointer-events-auto" draggable={false}>
-      <Button
-        variant="outline"
-        size="sm"
-        className="pointer-events-auto"
+      <button
+        type="button"
+        // WHY this native chrome instead of shadcn's own `Button`: Zach's
+        // own live feedback next to the real stock style panel — see
+        // nativeChrome.ts's own WHY, shared verbatim with the drawer tab
+        // right beside this button so the pair reads as one unit.
+        className={cn(
+          'pointer-events-auto flex h-6 shrink-0 items-center px-2 text-[11px] font-medium outline-none hover:bg-[var(--tl-color-hint)] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-[var(--tl-color-panel)]',
+          NATIVE_PANEL_CHROME,
+        )}
         disabled={shapeCount === 0}
         title={shapeCount === 0 ? 'Nothing on the board to check yet' : undefined}
         onClick={handleRun}
         data-testid="stock-check-button"
       >
         Stock check
-      </Button>
+      </button>
       <Sheet open={open} onOpenChange={handleOpenChange}>
         {/* WHY `data-[side=bottom]:h-[85vh]`, not a bare `h-[85vh]`: shadcn's own
             SheetContent already carries `data-[side=bottom]:h-auto` — an

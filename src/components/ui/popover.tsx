@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 import { cn } from "cn"
+import { dockPortalContainer } from "./dock-portal"
 
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
@@ -23,18 +24,70 @@ function PopoverContent({
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={dockPortalContainer()}>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
-        className="isolate z-50"
+        // WHY `positionMethod="fixed"`: found chasing a real, reproducible
+        // "the picker's own background stays stuck light in dark mode"
+        // report that turned out to not be about colour at all. Base UI's
+        // default (`positionMethod: 'absolute'`, undocumented at the call
+        // site — see useAnchorPositioning's own JSDoc) computes its
+        // Positioner's `transform: translate(x,y)` offset ASSUMING the
+        // nearest positioned ancestor sits at the document origin — true
+        // when portaled to `<body>` (`position: static`), which is what
+        // this assumption was built against before `container` (above)
+        // existed. `dockPortalContainer()` portals into the dock's own
+        // outer div instead, which is `position: absolute` itself — now
+        // THAT div is the containing block, and it does NOT sit at (0,0)
+        // (`top-0 right-0`, anchored to the right edge). Measured directly:
+        // a fill-swatch trigger at real screen x:1013 produced a popup
+        // rendered at x:1909 — the dock's own ~900px left-edge offset added
+        // on top of floating-ui's already-correct-for-body math. `fixed`
+        // positions relative to the viewport regardless of an ancestor's
+        // own `position`, matching what worked by accident when portaled
+        // to body. (A `transform` on an ancestor would still break `fixed`
+        // the same way — the outer div deliberately never gets one, see
+        // Inspector.tsx's own WHY on that split.)
+        positionMethod="fixed"
+        // `pointer-events-auto`: `container` (above) now portals this INTO
+        // the dock's own outer div, which is unconditionally `pointer-
+        // events: none` (Inspector.tsx's own WHY — a closed drawer must
+        // never eat canvas clicks) — a property every descendant INHERITS
+        // unless it sets its own value. Without this override here, the
+        // popup portaled in was un-clickable too, not just correctly
+        // positioned; see dock-portal.ts's own WHY for the fuller story.
+        className="isolate z-[320] pointer-events-auto"
       >
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(
             "z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            // WHY `data-instant:!animate-none`: the real cause behind the
+            // dark-mode "popup background stays white" report — it was
+            // never a colour bug. Base UI stamps `data-instant="click"`
+            // (its own documented signal, `PopoverPositionerState.instant`
+            // — "present if animations should be instant") on a REOPEN that
+            // follows a recent close, and its own docs' reference CSS
+            // handles it with `&[data-instant] { transition: none }` — but
+            // that's for the TRANSITION-based pattern their docs use. This
+            // template instead runs the `animate-in`/`fade-in-0` KEYFRAME
+            // classes unconditionally on `data-open`, which never checks
+            // `data-instant` at all, and a keyframe animation Base UI never
+            // restarts (because "instant" means it isn't driving one this
+            // time) just sits frozen at its own 0%-frame value — measured
+            // directly: `opacity` stuck at literal `"0"` forever on a
+            // reopened popup, light AND dark alike, with the correct
+            // `--popover` value already resolved on the element the whole
+            // time. (`fade-in-0` — this class name's own `0` is the
+            // FROM-opacity, not a completed value.) Light's own check still
+            // read PASS by coincidence: light's frozen fallback IS white,
+            // which happens to equal light's own correct answer. `!` forces
+            // this over `data-open:animate-in` regardless of which rule
+            // Tailwind emits first — same specificity otherwise.
+            "data-instant:!animate-none",
             className
           )}
           {...props}

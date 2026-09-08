@@ -487,10 +487,22 @@ export function useDockWidth(): [number, (next: number) => void] {
  *  (a middle divider, not a wider single row) rather than merged into one
  *  run of six, so the picker itself keeps saying "these are two attempts",
  *  the same fact `VARIANTS[id].round` records. */
-export function VariantPicker({ current }: { current: VariantId }) {
+/** Below this dock width, the six-segment strip itself does not fit next
+ *  to the header's own tabs/chevron — measured directly (auditor finding
+ *  #3: the strip's own "6" segment sat off-screen at 240px, and the strip
+ *  as a whole clipped 15px into the header at 280px) — so it collapses
+ *  into one compact "V4" trigger instead. 300 is comfortably above both
+ *  measured failures and below the width `VariantPicker`'s full strip is
+ *  actually proven to fit at (`tests/inspector_smoke.mjs`'s existing
+ *  240/280/360 sweeps). */
+export const VARIANT_PICKER_COMPACT_MAX_DOCK_WIDTH = 300
+
+export function VariantPicker({ current, dockWidth }: { current: VariantId; dockWidth: number }) {
 	const id = useId()
 	const roundOne: VariantId[] = [1, 2, 3]
 	const roundTwo: VariantId[] = [4, 5, 6]
+	// Round 3 is a single variant by design — see `isFigmaExactVariant`.
+	const roundThree: VariantId[] = [7]
 	const item = (variantId: VariantId) => (
 		<a
 			key={variantId}
@@ -506,11 +518,36 @@ export function VariantPicker({ current }: { current: VariantId }) {
 			{variantId}
 		</a>
 	)
+	if (dockWidth < VARIANT_PICKER_COMPACT_MAX_DOCK_WIDTH) {
+		// A plain native `<select>`, not `CompactSelect`/Base UI's own Select:
+		// this is a NAVIGATION (a full-page reload to `?variant=N` — see
+		// `variantUrl`'s own WHY), never a value the dock keeps state for, so
+		// it needs none of Base UI's portal/positioning machinery — just an
+		// `onChange` that reloads, and one that works even before hydration
+		// finishes since it is real browser-native `<option>` markup.
+		return (
+			<select
+				aria-label="Inspector variant"
+				data-testid="inspector-variant-picker-compact"
+				className={cn(panelFieldBase, 'h-[22px] w-14 px-1 text-[11px]')}
+				value={current}
+				onChange={(event) => { window.location.href = variantUrl(Number(event.target.value) as VariantId) }}
+			>
+				{[...roundOne, ...roundTwo, ...roundThree].map((variantId) => (
+					<option key={variantId} value={variantId} data-testid={`inspector-variant-option-${variantId}`}>
+						V{variantId} — {VARIANTS[variantId].name}
+					</option>
+				))}
+			</select>
+		)
+	}
 	return (
 		<div role="radiogroup" aria-label="Inspector variant" className={cn(segmentRootClass)} data-testid="inspector-variant-picker">
 			{roundOne.map(item)}
 			<span aria-hidden="true" className="px-0.5 text-[10px] text-[var(--v-muted)]">·</span>
 			{roundTwo.map(item)}
+			<span aria-hidden="true" className="px-0.5 text-[10px] text-[var(--v-muted)]">·</span>
+			{roundThree.map(item)}
 			<span id={id} className="sr-only">Reloads the dock with the chosen variant's theme and layout.</span>
 		</div>
 	)

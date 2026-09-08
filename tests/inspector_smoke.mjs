@@ -147,14 +147,20 @@ async function captureFullDock(page, path) {
 async function runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, variant) {
   const label = `variant ${variant}`
   const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-  await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}` })
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&drawer=open&variant=${variant}` })
   await waitFor(page, 'window.__lab && window.__lab.ready === true', `${label} ready`, 20000)
   await delay(500)
   await selectShape(page, RECT_ID)
   await delay(150)
 
   const ids = await testIds(page)
-  checklist.add(`${label}: rows present (W field, variant picker)`, ids.has('inspector-field-w') && ids.has(`inspector-variant-${variant}`))
+  // Judge round 2 (auditor finding #3): below `VARIANT_PICKER_COMPACT_MAX_DOCK_WIDTH`
+  // (kit.tsx), the six-segment strip collapses into one compact <select> —
+  // the DEFAULT 280px width is below that threshold, so the segmented
+  // testid is no longer guaranteed here; either form proves the picker
+  // rendered and reflects the live variant.
+  const variantPickerPresent = ids.has(`inspector-variant-${variant}`) || ids.has('inspector-variant-picker-compact')
+  checklist.add(`${label}: rows present (W field, variant picker)`, ids.has('inspector-field-w') && variantPickerPresent)
 
   // Zach's own audit, item 6 (spacing): open-pencil's own measured rhythm —
   // caption→field 4px, field→next-caption 8px, field height 24, section
@@ -211,8 +217,13 @@ async function runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, vari
   // variant keeps as a segmented control (3 options never clears V3's
   // Select threshold), so it is the one cross-variant place to read an
   // UNPRESSED segment's colour.
+  // `dockEl` is the `-slide` div (real paint), not the outer `[data-testid=
+  // "inspector"]` (bare positioning host, no background of its own since
+  // the drawer split — see `dockPaintVsPanelVar`'s own WHY below for the
+  // full reasoning). The var probes below stay valid on either element;
+  // `dockBg` needs the one that actually paints.
   const inkReadings = () => evaluate(page, `JSON.stringify((() => {
-    const dockEl = document.querySelector('[data-testid="inspector"]')
+    const dockEl = document.querySelector('[data-testid="inspector-slide"]')
     function probe(cssVar) {
       const el = document.createElement('span')
       el.style.color = cssVar
@@ -314,7 +325,7 @@ async function runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, vari
   // it started itself, never Zach's browser or `npm run dev`.
   {
     const page2 = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?drawer=open&variant=${variant}` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize ready`, 20000)
     await delay(300)
     // WHY clear + reload before dragging: this whole block runs on a
@@ -326,7 +337,7 @@ async function runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, vari
     // 280 default (measured: variant 2 read 440, exactly 360 + this
     // gesture's own +80).
     await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.dockWidth')`)
-    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?drawer=open&variant=${variant}` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize ready (cleared)`, 20000)
     await delay(300)
     const handleBox = await elementBox(page2, '[data-testid="inspector-resize-handle"]')
@@ -336,7 +347,7 @@ async function runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, vari
     const widthAfterDrag = Number(await evaluate(page2, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
     checklist.add(`${label}: dragging the resize handle widens the dock to ~360px (now ${widthAfterDrag})`, Math.abs(widthAfterDrag - 360) < 4)
 
-    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?drawer=open&variant=${variant}` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize reload ready`, 20000)
     await delay(300)
     const widthAfterReload = Number(await evaluate(page2, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
@@ -386,7 +397,7 @@ const FIGMA_LINE_TARGETS = {
 async function runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant) {
   const label = `variant ${variant}`
   const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-  await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}` })
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&drawer=open&variant=${variant}` })
   await waitFor(page, 'window.__lab && window.__lab.ready === true', `${label} ready`, 20000)
   await delay(500)
   await selectShape(page, RECT_ID)
@@ -490,7 +501,7 @@ async function runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant) {
 
   /* --------------------------------------------------- semantic checks --- */
   const semPage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-  await semPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}` })
+  await semPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&drawer=open&variant=${variant}` })
   await waitFor(semPage, 'window.__lab && window.__lab.ready === true', `${label} sem ready`, 20000)
   await delay(400)
   await selectShape(semPage, RECT_ID)
@@ -566,11 +577,11 @@ async function runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant) {
   /* ------------------------------------------------------- resize/reload - */
   {
     const page2 = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?drawer=open&variant=${variant}` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize ready`, 20000)
     await delay(300)
     await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.dockWidth')`)
-    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?drawer=open&variant=${variant}` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize ready (cleared)`, 20000)
     await delay(300)
     const handleBox = await elementBox(page2, '[data-testid="inspector-resize-handle"]')
@@ -578,7 +589,7 @@ async function runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant) {
     await delay(200)
     const widthAfterDrag = Number(await evaluate(page2, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
     checklist.add(`${label}: dragging the resize handle widens the dock to ~360px (now ${widthAfterDrag})`, Math.abs(widthAfterDrag - 360) < 4)
-    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?drawer=open&variant=${variant}` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize reload ready`, 20000)
     await delay(300)
     const widthAfterReload = Number(await evaluate(page2, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
@@ -590,7 +601,7 @@ async function runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant) {
   /* -------------------------------------------------------------- V6 only */
   if (variant === 6) {
     const page3 = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-    await page3.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=6` })
+    await page3.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&drawer=open&variant=6` })
     await waitFor(page3, 'window.__lab && window.__lab.ready === true', 'v6 chip ready', 20000)
     await delay(400)
     await selectShape(page3, RECT_ID)
@@ -608,77 +619,370 @@ async function runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant) {
   }
 }
 
-/* -------------------------------------------------- stock panel switch --
- * Coordinator add-on, mid-task: a header button that swaps the Figma dock
- * for tldraw's OWN `DefaultStylePanel`, and a pill that swaps back — see
- * Inspector.tsx's own WHY on `StockPanelView`/`readPanelMode`. Run once
- * (the switch is variant-independent chrome, not part of any one variant's
- * anatomy), against the app's own DEFAULT variant.
+/* ------------------------------------------------------------- drawer ---
+ * Zach, verbatim: "I have a nice idea for how I want the interaction to be
+ * to show/hide the inspector panel. It should kinda feel like a drag out
+ * window. By default it's hidden but in the top right corner there is
+ * basically like a drawer button and if you press it it will slide out
+ * over the stock tldraw menu." Replaces the earlier stock/inspector panel
+ * SWITCH (`runStockPanelSwitchChecks`, `panelMode.ts` — both gone): stock
+ * is now always what paints, and the dock is a drawer over it. Run once
+ * (variant-independent chrome), against the app's own default variant.
  */
-async function runStockPanelSwitchChecks(cdpPort, previewPort, checklist) {
+async function runDrawerChecks(cdpPort, previewPort, checklist) {
   const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
   await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors` })
-  await waitFor(page, 'window.__lab && window.__lab.ready === true', 'stock switch ready', 20000)
+  await waitFor(page, 'window.__lab && window.__lab.ready === true', 'drawer ready', 20000)
   await delay(400)
+
+  // Fresh load: stock panel visible, dock closed.
+  const idsClosed = await testIds(page)
+  checklist.add('fresh load shows the stock panel (.tlui-style-panel present)', await evaluate(page, `!!document.querySelector('.tlui-style-panel')`))
+  checklist.add('fresh load shows the drawer tab', idsClosed.has('inspector-drawer-tab'))
+  checklist.add(
+    'the dock is present but aria-hidden and inert while closed',
+    await evaluate(page, `(() => { const el = document.querySelector('[data-testid="inspector"]'); return !!el && el.getAttribute('aria-hidden') === 'true' && el.inert === true })()`),
+  )
+  checklist.add(
+    'the closed dock does not eat clicks meant for the canvas underneath it',
+    await evaluate(page, `getComputedStyle(document.querySelector('[data-testid="inspector"]')).pointerEvents === 'none'`),
+  )
+
+  // The tab click slides the dock in.
   await selectShape(page, RECT_ID)
   await delay(300)
+  await clickElement(page, '[data-testid="inspector-drawer-tab"]')
+  await delay(300) // >= the 180ms transition
+  checklist.add('the tab click opens the drawer (aria-hidden false)', await evaluate(page, `document.querySelector('[data-testid="inspector"]')?.getAttribute('aria-hidden')`) === 'false')
+  // Judge round 2's own fix (Codex #2/auditor #6, positioning regression):
+  // the SLIDE transform lives on `[data-testid="inspector-slide"]`, not the
+  // outer `[data-testid="inspector"]` any more — that outer div's own rect
+  // is deliberately static (`top:0 right:0 width:dockWidth`) regardless of
+  // open/closed, so a portaled Popover/Select stays positioned correctly.
+  const dockRect = await elementBox(page, '[data-testid="inspector-slide"]')
+  const containerWidth = await evaluate(page, 'window.__lab.editor.getContainer().getBoundingClientRect().right')
+  checklist.add(`the open dock's right edge reaches the container's right edge (${dockRect.x + dockRect.width} vs ${containerWidth})`, Math.abs(dockRect.x + dockRect.width - Number(containerWidth)) < 1)
+  const covered = await evaluate(page, `(() => {
+    const b = document.querySelector('.tlui-style-panel__wrapper').getBoundingClientRect()
+    const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)
+    return !!el?.closest('[data-testid="inspector"]')
+  })()`)
+  checklist.add('the open dock visually covers the stock style panel (elementFromPoint at its centre hits the dock)', covered)
 
-  await reveal(page, '[data-testid="inspector-switch-to-stock"]')
-  await clickElement(page, '[data-testid="inspector-switch-to-stock"]')
+  // The chevron closes it.
+  await clickElement(page, '[data-testid="inspector-drawer-close"]')
   await delay(300)
-  const idsInStock = await testIds(page)
-  checklist.add('the header button switches to the stock panel (.tlui-style-panel present)', await evaluate(page, `!!document.querySelector('.tlui-style-panel')`))
-  checklist.add('the Figma dock is gone in stock mode', !idsInStock.has('inspector'))
-  checklist.add('the "Inspector" pill is present once a shape is selected', idsInStock.has('inspector-switch-to-inspector'))
+  checklist.add('the chevron closes the drawer', await evaluate(page, `document.querySelector('[data-testid="inspector"]')?.getAttribute('aria-hidden')`) === 'true')
 
-  // The stock panel's own colour buttons work.
-  {
-    const before = await getShape(page, RECT_ID)
-    await reveal(page, '[data-testid="style.color.green"]')
-    await clickElement(page, '[data-testid="style.color.green"]')
-    await delay(200)
-    const after = await getShape(page, RECT_ID)
-    checklist.add(`the stock panel's own colour button writes props.color (${before.props.color} -> ${after.props.color})`, after.props.color === 'green')
-  }
-
-  await clickElement(page, '[data-testid="inspector-switch-to-inspector"]')
+  // Escape, with focus inside the dock, closes it (and returns focus to the
+  // container, the existing pre-drawer behaviour — unchanged, just also
+  // closing now).
+  await clickElement(page, '[data-testid="inspector-drawer-tab"]')
   await delay(300)
-  const idsBack = await testIds(page)
-  checklist.add('the "Inspector" pill switches back to the Figma dock', idsBack.has('inspector'))
+  await clickElement(page, '[data-testid="inspector-field-x"]')
+  await delay(150)
+  await key(page, 'Escape', 'Escape')
+  await delay(300)
+  checklist.add('Escape with focus in the dock closes it', await evaluate(page, `document.querySelector('[data-testid="inspector"]')?.getAttribute('aria-hidden')`) === 'true')
+  checklist.add('Escape still returns focus to the editor container', await evaluate(page, `document.activeElement === window.__lab.editor.getContainer()`))
+
+  // A drag of >= 24px on the tab opens it (the closed state from the
+  // chevron close above).
+  const tabBox = await elementBox(page, '[data-testid="inspector-drawer-tab"]')
+  await drag(page, { x: tabBox.cx, y: tabBox.cy }, { x: tabBox.cx - 30, y: tabBox.cy })
+  await delay(300)
+  checklist.add('dragging the tab >= 24px left opens the drawer', await evaluate(page, `document.querySelector('[data-testid="inspector"]')?.getAttribute('aria-hidden')`) === 'false')
   page.close()
 
-  // Persistence: a NON-seed load remembers the flip; a `?seed=` load ignores
-  // whatever is in localStorage (same rule dock width already follows).
+  // Persistence: a NON-seed load remembers open/closed; a `?seed=` load
+  // ignores whatever is in localStorage (same rule dock width follows).
   {
     const page2 = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
     await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', 'persist ready', 20000)
     await delay(300)
-    await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.panelMode')`)
+    await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.drawerOpen')`)
     await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', 'persist ready (cleared)', 20000)
     await delay(300)
-    await reveal(page2, '[data-testid="inspector-switch-to-stock"]')
-    await clickElement(page2, '[data-testid="inspector-switch-to-stock"]')
+    checklist.add('a fresh non-seed load defaults to closed', await evaluate(page2, `document.querySelector('[data-testid="inspector"]')?.getAttribute('aria-hidden')`) === 'true')
+    await clickElement(page2, '[data-testid="inspector-drawer-tab"]')
     await delay(300)
-    const stored = await evaluate(page2, `localStorage.getItem('tldraw_styling_lab.panelMode')`)
-    checklist.add(`flipping to stock persists to localStorage (${stored})`, stored === 'stock')
+    const stored = await evaluate(page2, `localStorage.getItem('tldraw_styling_lab.drawerOpen')`)
+    checklist.add(`opening persists to localStorage (${stored})`, stored === 'open')
 
     await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', 'persist reload ready', 20000)
     await delay(400)
-    const idsAfterReload = await testIds(page2)
-    checklist.add('a non-seed reload keeps the persisted stock mode', !idsAfterReload.has('inspector') && await evaluate(page2, `!!document.querySelector('.tlui-style-panel')`))
+    checklist.add('a non-seed reload keeps the persisted open state', await evaluate(page2, `document.querySelector('[data-testid="inspector"]')?.getAttribute('aria-hidden')`) === 'false')
 
     await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock` })
     await waitFor(page2, 'window.__lab && window.__lab.ready === true', 'seed reload ready', 20000)
     await delay(400)
-    const idsSeedReload = await testIds(page2)
-    checklist.add('a ?seed= reload ignores the persisted stock mode (starts in inspector mode)', idsSeedReload.has('inspector'))
+    checklist.add('a ?seed= reload ignores the persisted open state (starts closed)', await evaluate(page2, `document.querySelector('[data-testid="inspector"]')?.getAttribute('aria-hidden')`) === 'true')
 
-    await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.panelMode')`)
+    await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.drawerOpen')`)
     page2.close()
   }
+}
+
+/* -------------------------------------------------- judge round 2 fixes -
+ * Two independent judges (Codex, an in-family auditor) ran against the
+ * drawer branch. Each numbered finding below is theirs; the fix is in
+ * Inspector.tsx/figmaKit.tsx/figmaVariants.tsx/kit.tsx/ScrubNumber.tsx/
+ * inspectorModel.ts/the shadcn popover/select/tooltip wrappers — this
+ * function is the proof, not a repeat of the fix's own WHY (each fix
+ * carries its own comment at the seam it changed).
+ */
+async function runJudgeRound2Checks(cdpPort, previewPort, checklist) {
+  const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=4&drawer=open` })
+  await waitFor(page, 'window.__lab && window.__lab.ready === true', 'judge round2 ready', 20000)
+  await delay(400)
+  await selectShape(page, RECT_ID)
+  await delay(200)
+
+  // Codex #1 / auditor #2: no number input clips its own value, at 240,
+  // 280 and 360, across every variant, WITH an exact-override row present
+  // (strokeWidth) so the narrower "exact px field" branches are covered too.
+  {
+    await reveal(page, '[data-testid="inspector-weightselect"]')
+    // Force strokeWidth into its own exact-override state so the width
+    // check below also covers that field, not just the default rung select.
+    const weightBox = await elementBox(page, '[data-testid="inspector-weightselect"]')
+    await clickElement(page, '[data-testid="inspector-weightselect"]')
+    await delay(150)
+    const exactOption = await evaluate(page, `!!document.querySelector('[data-testid="inspector-weightselect-__exact__"]')`)
+    if (exactOption) {
+      await clickElement(page, '[data-testid="inspector-weightselect-__exact__"]')
+      await delay(100)
+      await replaceFieldText(page, '[data-testid="inspector-number-strokeWidth"]', '12.5')
+      await key(page, 'Enter', 'Enter')
+      await delay(150)
+    }
+    for (const variant of [1, 2, 3, 4, 5, 6]) {
+      for (const width of [240, 280, 360]) {
+        const vpage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+        await vpage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}&drawer=open` })
+        await waitFor(vpage, 'window.__lab && window.__lab.ready === true', `v${variant}@${width} ready`, 20000)
+        await delay(300)
+        await selectShape(vpage, RECT_ID)
+        await delay(150)
+        await evaluate(vpage, `localStorage.removeItem('tldraw_styling_lab.dockWidth')`)
+        const handleBox = await elementBox(vpage, '[data-testid="inspector-resize-handle"]')
+        const current = Number(await evaluate(vpage, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
+        const dx = current - width
+        if (Math.abs(dx) >= 1) {
+          await drag(vpage, { x: handleBox.cx, y: handleBox.cy }, { x: handleBox.cx + dx, y: handleBox.cy })
+          await delay(150)
+        }
+        const clipped = await evaluate(vpage, `JSON.stringify([...document.querySelectorAll('[data-testid^="inspector-number-"]')]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1)
+          .map((el) => el.dataset.testid))`).then(JSON.parse)
+        checklist.add(`v${variant}@${width}: no number input clips (${clipped.length === 0 ? 'none' : clipped.join(', ')})`, clipped.length === 0)
+        vpage.close()
+      }
+    }
+  }
+
+  // Auditor #3: every header control's right edge stays inside the dock at
+  // 240/280/360, all six variants.
+  for (const variant of [1, 2, 3, 4, 5, 6]) {
+    for (const width of [240, 280, 360]) {
+      const vpage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+      await vpage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}&drawer=open` })
+      await waitFor(vpage, 'window.__lab && window.__lab.ready === true', `v${variant}@${width} header ready`, 20000)
+      await delay(300)
+      await evaluate(vpage, `localStorage.removeItem('tldraw_styling_lab.dockWidth')`)
+      const handleBox = await elementBox(vpage, '[data-testid="inspector-resize-handle"]')
+      const current = Number(await evaluate(vpage, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
+      const dx = current - width
+      if (Math.abs(dx) >= 1) {
+        await drag(vpage, { x: handleBox.cx, y: handleBox.cy }, { x: handleBox.cx + dx, y: handleBox.cy })
+        await delay(150)
+      }
+      const overflow = await evaluate(vpage, `JSON.stringify((() => {
+        const dock = document.querySelector('[data-testid="inspector"]').getBoundingClientRect()
+        const controls = [...document.querySelectorAll('[data-testid="inspector-drawer-close"], [data-testid="inspector-tab-inspect"], [data-testid="inspector-tab-theme"], [data-testid="inspector-variant-picker"], [data-testid="inspector-variant-picker-compact"], [data-testid^="inspector-variant-"]')]
+        return controls.map((el) => { const r = el.getBoundingClientRect(); return { id: el.dataset.testid, right: r.right } }).filter((r) => r.right > dock.right + 0.5)
+      })())`).then(JSON.parse)
+      checklist.add(`v${variant}@${width}: header controls stay inside the dock (${overflow.length === 0 ? 'none' : overflow.map((r) => r.id).join(', ')})`, overflow.length === 0)
+      vpage.close()
+    }
+  }
+
+  // Auditor #4: round 1's swatch grid wraps instead of overflowing at 240.
+  for (const variant of [1, 2, 3]) {
+    const vpage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+    await vpage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}&drawer=open` })
+    await waitFor(vpage, 'window.__lab && window.__lab.ready === true', `v${variant} swatch ready`, 20000)
+    await delay(300)
+    await selectShape(vpage, RECT_ID)
+    await delay(150)
+    await evaluate(vpage, `localStorage.removeItem('tldraw_styling_lab.dockWidth')`)
+    const handleBox = await elementBox(vpage, '[data-testid="inspector-resize-handle"]')
+    const current = Number(await evaluate(vpage, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
+    const dx = current - 240
+    await drag(vpage, { x: handleBox.cx, y: handleBox.cy }, { x: handleBox.cx + dx, y: handleBox.cy })
+    await delay(150)
+    const overflow = await evaluate(vpage, `JSON.stringify((() => {
+      const dock = document.querySelector('[data-testid="inspector"]').getBoundingClientRect()
+      const swatches = [...document.querySelectorAll('[data-testid^="inspector-swatch-"]')]
+      return swatches.map((el) => { const r = el.getBoundingClientRect(); return { id: el.dataset.testid, right: r.right } }).filter((r) => r.right > dock.right + 0.5)
+    })())`).then(JSON.parse)
+    checklist.add(`v${variant}@240: swatch grid wraps, none overflow (${overflow.length === 0 ? 'none' : overflow.map((r) => r.id).join(', ')})`, overflow.length === 0)
+    vpage.close()
+  }
+
+  // Auditor #5: ScrubNumber is a real port of panelFieldBase, not shadcn's
+  // InputGroup defaults.
+  {
+    const field = await evaluate(page, `JSON.stringify((() => {
+      const el = document.querySelector('[data-testid="inspector-field-w"]')
+      const input = document.querySelector('[data-testid="inspector-number-w"]')
+      const cs = getComputedStyle(el)
+      return { borderRadius: cs.borderRadius, borderColor: cs.borderColor, height: cs.height, inputFontSize: getComputedStyle(input).fontSize }
+    })())`).then(JSON.parse)
+    checklist.add(`ScrubNumber border-radius is 4px (${field.borderRadius})`, field.borderRadius === '4px')
+    checklist.add(`ScrubNumber border is transparent at rest (${field.borderColor})`, field.borderColor === 'rgba(0, 0, 0, 0)')
+    checklist.add(`ScrubNumber height is 24px (${field.height})`, field.height === '24px')
+    checklist.add(`ScrubNumber input font-size is 11px (${field.inputFontSize})`, field.inputFontSize === '11px')
+  }
+
+  // Codex #2 / auditor #6: the colour picker popup inherits the dock's own
+  // palette in both themes (portaled INTO the dock now, not <body>), and
+  // the selected fill-style tile is visibly distinct from an unselected one.
+  for (const mode of ['light', 'dark']) {
+    if (mode === 'dark') { await evaluate(page, `window.__lab.editor.user.updateUserPreferences({ colorScheme: 'dark' })`); await delay(200) }
+    await reveal(page, '[data-testid="inspector-fillswatch"]')
+    await clickElement(page, '[data-testid="inspector-fillswatch"]')
+    await delay(250)
+    const themed = await evaluate(page, `JSON.stringify((() => {
+      // dock (outer): the portal TARGET, per dockPortalContainer() — stays
+      // the outer div because that's the never-transformed element Base UI
+      // actually portals popovers into (a SIBLING of the slide div, not a
+      // descendant of it), so containment must be checked against it.
+      // dockSlide (inner): the element that actually paints the panel
+      // background, since the drawer split — see dockPaintVsPanelVar's own
+      // WHY. The two are deliberately different elements here.
+      const dock = document.querySelector('[data-testid="inspector"]')
+      const dockSlide = document.querySelector('[data-testid="inspector-slide"]')
+      const content = document.querySelector('[data-slot="popover-content"]')
+      const selected = document.querySelector('[data-testid^="inspector-fillstyle-"][data-state="on"]')
+      const unselected = document.querySelector('[data-testid^="inspector-fillstyle-"][data-state="off"]')
+      return {
+        dockBg: getComputedStyle(dockSlide).backgroundColor,
+        popupBg: content ? getComputedStyle(content).backgroundColor : null,
+        insideDock: content ? dock.contains(content) : false,
+        selectedBg: selected ? getComputedStyle(selected).backgroundColor : null,
+        unselectedBg: unselected ? getComputedStyle(unselected).backgroundColor : null,
+      }
+    })())`).then(JSON.parse)
+    checklist.add(`${mode}: the picker popup portals inside the dock`, themed.insideDock)
+    checklist.add(`${mode}: the picker popup background matches the dock (${themed.popupBg} vs ${themed.dockBg})`, themed.popupBg === themed.dockBg)
+    checklist.add(`${mode}: the selected fill-style tile reads differently from an unselected one (${themed.selectedBg} vs ${themed.unselectedBg})`, themed.selectedBg !== themed.unselectedBg)
+    // WHY re-click the trigger, not Escape: found chasing this exact check
+    // failing in dark mode. Escape used to slam the whole DRAWER shut
+    // instead (Inspector.tsx's own WHY on the nested-popup check, fixed
+    // alongside this) — fixing that uncovered a SEPARATE, pre-existing gap
+    // underneath it: Base UI's Popover is documented to auto-focus its
+    // first tabbable element on open (there are three real `<button>`s in
+    // this popup), but measured directly here, focus stays on the trigger
+    // instead, so the popup's own Escape-to-close (which needs focus
+    // inside it) never fires either — Escape does nothing, popupOpen stays
+    // true. Not this fix's scope to chase further: re-clicking the trigger
+    // (a real Base UI toggle, verified directly in the browser) closes it
+    // reliably regardless, which is all this loop's cleanup step needs.
+    // Flagged in docs/log.md as a real, separate follow-up.
+    await clickElement(page, '[data-testid="inspector-fillswatch"]')
+    await delay(150)
+  }
+  await evaluate(page, `window.__lab.editor.user.updateUserPreferences({ colorScheme: 'light' })`)
+  await delay(150)
+
+  // Auditor #7: the eye's "last style" memory does not leak across a
+  // shape-selection change.
+  {
+    await selectShape(page, RECT_ID) // solid
+    await delay(150)
+    await reveal(page, '[data-testid="inspector-fill-eye"]')
+    await clickElement(page, '[data-testid="inspector-fill-eye"]') // off
+    await delay(150)
+    await selectShape(page, ELLIPSE_ID) // pattern
+    await delay(150)
+    await selectShape(page, RECT_ID) // back to the rect, still fill:none
+    await delay(150)
+    await clickElement(page, '[data-testid="inspector-fill-eye"]') // restore
+    await delay(150)
+    const after = await getShape(page, RECT_ID)
+    checklist.add(`the eye restores THIS shape's own previous style, not another shape's (${after.props.fill})`, after.props.fill === 'solid')
+  }
+
+  // Codex #8: an alpha scrub is one undo step, not one per pointer frame.
+  {
+    const before = await getShape(page, RECT_ID)
+    const box = await reveal(page, '[data-testid="inspector-fillswatch"]')
+    // The alpha ScrubNumber sits right of the fill name — reuse the same
+    // whole-field drag contract every other ScrubNumber gets tested with.
+    const alphaBox = await elementBox(page, '[data-testid="inspector-field-fillOpacityPercent"]')
+    await drag(page, { x: alphaBox.cx, y: alphaBox.cy }, { x: alphaBox.cx + 40, y: alphaBox.cy })
+    await delay(150)
+    const dragged = await getShape(page, RECT_ID)
+    checklist.add('the alpha scrub changes fillOpacity', dragged.props.fillOpacity !== before.props.fillOpacity || JSON.stringify(dragged.meta) !== JSON.stringify(before.meta))
+    await evaluate(page, 'void window.__lab.editor.undo()')
+    await delay(150)
+    const undone = await getShape(page, RECT_ID)
+    checklist.add('one alpha scrub gesture is one undo step', JSON.stringify(undone) === JSON.stringify(before))
+    void box
+  }
+
+  // Codex #9: a default-swatch click is one undo step (writes the named
+  // colour AND clears the exact override together).
+  {
+    await replaceFieldText(page, '[data-testid="inspector-fillswatch-hex"]', '#ff00ff')
+    await key(page, 'Enter', 'Enter')
+    await delay(200)
+    const withOverride = await getShape(page, RECT_ID)
+    checklist.add('an exact override is set before the default-swatch check', withOverride.meta.systemSketchPrimitiveOverride?.fillColor === '#ff00ff')
+    await reveal(page, '[data-testid="inspector-defaultswatch-color-green"]')
+    await clickElement(page, '[data-testid="inspector-defaultswatch-color-green"]')
+    await delay(200)
+    const afterSwatch = await getShape(page, RECT_ID)
+    checklist.add('the default swatch writes the named colour and clears the override in one call', afterSwatch.props.color === 'green' && afterSwatch.meta.systemSketchPrimitiveOverride?.fillColor === undefined)
+    await evaluate(page, 'void window.__lab.editor.undo()')
+    await delay(150)
+    const undone = await getShape(page, RECT_ID)
+    checklist.add('one undo fully reverts the default-swatch click (colour AND override together)', undone.props.color === withOverride.props.color && undone.meta.systemSketchPrimitiveOverride?.fillColor === withOverride.meta.systemSketchPrimitiveOverride?.fillColor)
+  }
+
+  // Auditor #12: V4-V6's own section rhythm matches round 1's measured
+  // values (32px header band, 4px caption-to-field gap).
+  for (const variant of [4, 5, 6]) {
+    const vpage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+    await vpage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}&drawer=open` })
+    await waitFor(vpage, 'window.__lab && window.__lab.ready === true', `v${variant} rhythm ready`, 20000)
+    await delay(300)
+    await selectShape(vpage, RECT_ID)
+    await delay(200)
+    if (variant === 6) { await clickElement(vpage, '[data-testid="inspector-accordion-position"]'); await delay(200) }
+    const rhythm = await evaluate(vpage, `JSON.stringify((() => {
+      const section = document.querySelector('[data-section="position"]')
+      const headerBand = section.querySelector(':scope > div')
+      const firstLine = section.querySelector('[data-line]')
+      if (!headerBand || !firstLine) return null
+      return {
+        headerHeight: headerBand.getBoundingClientRect().height,
+        captionToField: firstLine.getBoundingClientRect().top - headerBand.getBoundingClientRect().bottom,
+      }
+    })())`).then(JSON.parse)
+    if (rhythm) {
+      checklist.add(`v${variant}: section header band is 32px (${rhythm.headerHeight})`, Math.abs(rhythm.headerHeight - 32) < 0.5)
+      checklist.add(`v${variant}: caption-to-field gap is <= 4px (${rhythm.captionToField})`, rhythm.captionToField <= 4)
+    }
+    vpage.close()
+  }
+
+  page.close()
 }
 
 async function main() {
@@ -717,7 +1021,7 @@ async function main() {
       // the brief's own words: "switch the journey's default to 4 only where
       // it asserts the new anatomy."
       const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-      await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=1` })
+      await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&drawer=open&variant=1` })
       await waitFor(page, 'window.__lab && window.__lab.ready === true', 'chrome route ready', 20000)
       await delay(500)
 
@@ -882,8 +1186,21 @@ async function main() {
       // (not `.tl-container`) because `--v-panel` is scoped to
       // `[data-testid="inspector"][data-variant]`, one level more specific
       // than the M1-era bridge this replaces — see app.css's own WHY.
+      // WHY `[data-testid="inspector-slide"]`, not the outer `[data-testid=
+      // "inspector"]`, for the two ACTUAL PAINT reads below (`dock` here,
+      // `bg` in headerContrast): the drawer split moved every visible box
+      // style (`bg-background`, the slide transform) onto the inner slide
+      // div and left the outer as a bare positioning/attribute host with no
+      // background of its own (see Inspector.tsx's own WHY on that split) —
+      // reading the outer's `backgroundColor` now returns transparent
+      // regardless of theme, which parses as near-black and silently failed
+      // both this check and the header-contrast one below at a fixed
+      // ~1.3:1 no matter which theme was live. The `--v-panel`/`--foreground`
+      // CSS-variable PROBES stay fine on either div — custom properties
+      // inherit through descendants regardless of which element paints —
+      // this is only about elements read for their own resolved paint.
       const dockPaintVsPanelVar = () => evaluate(page, `JSON.stringify((() => {
-        const dockEl = document.querySelector('[data-testid="inspector"]')
+        const dockEl = document.querySelector('[data-testid="inspector-slide"]')
         const probe = document.createElement('span')
         probe.style.background = 'var(--v-panel)'
         dockEl.appendChild(probe)
@@ -895,9 +1212,10 @@ async function main() {
 
       // The Layer section header's own text colour against the dock's actual
       // background — read fresh in whichever theme is live when called.
+      // Background from `-slide`, same reason as `dockPaintVsPanelVar` above.
       const headerContrast = () => evaluate(page, `JSON.stringify((() => {
         const trigger = document.querySelector('[data-testid="inspector-group-layer"]')
-        return { text: getComputedStyle(trigger).color, bg: getComputedStyle(document.querySelector('[data-testid="inspector"]')).backgroundColor }
+        return { text: getComputedStyle(trigger).color, bg: getComputedStyle(document.querySelector('[data-testid="inspector-slide"]')).backgroundColor }
       })())`).then(JSON.parse)
 
       // One UNPRESSED geometry tile's ink, and the dock's own `--foreground` —
@@ -1085,7 +1403,7 @@ async function main() {
       // `stock.html` mounts the same `Inspector` — pinned to `&variant=1` for
       // the same reason the chrome route above is (round 1's own testids).
       const stockPage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-      await stockPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/stock.html?seed=stock&variant=1` })
+      await stockPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/stock.html?seed=stock&drawer=open&variant=1` })
       await waitFor(stockPage, 'window.__lab && window.__lab.ready === true', 'stock route ready', 20000)
       await delay(500)
       await selectShape(stockPage, RECT_ID)
@@ -1114,7 +1432,10 @@ async function main() {
       }
 
       /* ---------------------------------------- stock/inspector panel switch */
-      await runStockPanelSwitchChecks(cdpPort, previewPort, checklist)
+      await runDrawerChecks(cdpPort, previewPort, checklist)
+
+      /* ------------------------------------------------- judge round 2 fixes */
+      await runJudgeRound2Checks(cdpPort, previewPort, checklist)
     } finally {
       session.kill()
     }
