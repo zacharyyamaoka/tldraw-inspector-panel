@@ -621,10 +621,23 @@ const FIELDS: FieldSpec[] = [
 		caption: 'Rotate', paired: true, glyph: 'angle',
 		applies: () => true,
 		read: (shape) => round((shape.rotation * 180) / Math.PI, 1),
+		// WHY rotateShapesBy about each shape's own centre, not a bare `rotation`
+		// write: `shape.rotation` turns the shape about its origin — the top-left
+		// corner — so typing 45 into the field swung the shape around its corner
+		// while tldraw's own rotate handle (and Figma's field) turn it about its
+		// centre. Zach: "can you rotate around center instead of around the
+		// corner?" (2026-09-07). The delta form keeps the centre fixed exactly
+		// the way the handle does; per shape, so a Mixed selection lands every
+		// shape on the typed angle without sharing one pivot.
 		write: (editor, shapes, value) => {
-			updateShapes(editor, shapes.map((shape) => ({
-				id: shape.id, type: shape.type, rotation: (Number(value) * Math.PI) / 180,
-			})))
+			const target = (Number(value) * Math.PI) / 180
+			for (const shape of shapes) {
+				const delta = target - shape.rotation
+				if (Math.abs(delta) < 1e-9) continue
+				const bounds = editor.getShapePageBounds(shape)
+				const center = bounds ? { x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 } : undefined
+				editor.rotateShapesBy([shape.id], delta, center ? { center } : undefined)
+			}
 		},
 	},
 	{

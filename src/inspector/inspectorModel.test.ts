@@ -129,6 +129,7 @@ interface FakeEditorCalls {
 	nextStyles: Array<[string, string]>
 	updates: Array<Record<string, unknown>>
 	marks: string[]
+	rotations: Array<{ ids: string[]; delta: number; center?: { x: number; y: number } }>
 }
 
 /**
@@ -138,7 +139,9 @@ interface FakeEditorCalls {
  * pre-existing case here assumes.
  */
 function fakeEditor(shapes: FakeShape[], { paintSeam = true }: { paintSeam?: boolean } = {}) {
-	const calls: FakeEditorCalls = { nextStyles: [], updates: [], marks: [] }
+	const calls: FakeEditorCalls = { nextStyles: [], updates: [], marks: [],
+		rotations: [],
+	}
 	// A branded stand-in for a configured util; `paintReaches` reads the flag off
 	// the util `getShapeUtil` returns.
 	class FakePaintUtil {
@@ -197,6 +200,16 @@ function fakeEditor(shapes: FakeShape[], { paintSeam = true }: { paintSeam?: boo
 		// the two calls tldraw's own style bar makes.
 		setStyleForNextShapes: (style: { id: string }, value: string) => {
 			calls.nextStyles.push([style.id, value])
+		},
+		// Mirrors the real editor's contract: a delta in radians, applied to each
+		// shape, about an optional centre. The fixture only records the centre — the
+		// real editor moves x/y to keep it fixed, which the browser journey proves.
+		rotateShapesBy: (ids: string[], delta: number, opts?: { center?: { x: number; y: number } }) => {
+			calls.rotations.push({ ids, delta, center: opts?.center })
+			for (const id of ids) {
+				const target = shapes.find((candidate) => candidate.id === id)
+				if (target) target.rotation += delta
+			}
 		},
 		updateShapes: (partials: Array<Record<string, unknown>>) => {
 			calls.updates.push(...partials)
@@ -722,5 +735,22 @@ describe('M3: display values the census found cheap to reach', () => {
 		const model = getPrimitiveInspectorModel(fakeEditor([image('i')]).editor)!
 		expect(model.groups.find((group) => group.id === 'media')?.controls.map((c) => c.id)).toEqual(['altText'])
 		expect(controlIds(getPrimitiveInspectorModel(fakeEditor([geo('a')]).editor)!)).not.toContain('altText')
+	})
+})
+
+describe('rotation writes turn each shape about its own centre', () => {
+	it('calls rotateShapesBy with the delta to the typed angle and the page-bounds centre', () => {
+		const rect = geo('a', { w: 200, h: 100 })
+		const { editor, calls } = fakeEditor([rect])
+		applyPrimitiveInspectorControl(editor, 'rotation', 45, { shapeIds: [rect.id] })
+		expect(calls.rotations).toHaveLength(1)
+		expect(calls.rotations[0].ids).toEqual([rect.id])
+		expect(calls.rotations[0].delta).toBeCloseTo(Math.PI / 4, 9)
+		// the fixture's bounds are x:10 y:20 with the shape's own w/h
+		expect(calls.rotations[0].center).toEqual({ x: 110, y: 70 })
+		expect(Math.round((rect.rotation * 180) / Math.PI * 10) / 10).toBe(45)
+		// writing the angle it already has is a no-op, never a zero-delta call
+		applyPrimitiveInspectorControl(editor, 'rotation', 45, { shapeIds: [rect.id] })
+		expect(calls.rotations).toHaveLength(1)
 	})
 })

@@ -359,6 +359,23 @@ async function main() {
         checklist.add('typing +10 into X adds 10', Math.round(after.x) === Math.round(before.x + 10))
       }
 
+      // Rotate turns the shape about its centre, like the canvas handle — not
+      // about its top-left origin (Zach, 2026-09-07).
+      {
+        const centreOf = async () => JSON.parse(await evaluate(page, `(() => { const b = window.__lab.editor.getShapePageBounds(${JSON.stringify(RECT_ID)}); return JSON.stringify({ x: b.midX, y: b.midY }) })()`))
+        const before = await centreOf()
+        await replaceFieldText(page, '[data-testid="inspector-number-rotation"]', '45')
+        await key(page, 'Enter', 'Enter')
+        await delay(200)
+        const rotated = await getShape(page, RECT_ID)
+        const after = await centreOf()
+        checklist.add('typing 45 into Rotate sets 45°', Math.abs((rotated.rotation * 180) / Math.PI - 45) < 0.01)
+        checklist.add(`Rotate keeps the shape's centre fixed (moved ${Math.hypot(after.x - before.x, after.y - before.y).toFixed(2)}px)`, Math.hypot(after.x - before.x, after.y - before.y) < 0.5)
+        await replaceFieldText(page, '[data-testid="inspector-number-rotation"]', '0')
+        await key(page, 'Enter', 'Enter')
+        await delay(200)
+      }
+
       // Fill style segment writes the StyleProp.
       {
         await reveal(page, '[data-testid="inspector-segment-fill-pattern"]')
