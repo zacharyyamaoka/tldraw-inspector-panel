@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import {
 	PORTRAIT_BREAKPOINT,
 	TldrawUiRow,
+	usePassThroughWheelEvents,
 	TldrawUiToolbar,
 	useBreakpoint,
 	useEditor,
@@ -154,6 +155,18 @@ export function MenuPanelWithName() {
 	const editor = useEditor()
 	const breakpoint = useBreakpoint()
 
+	// WHY this hook, copied from DefaultMenuPanel along with the markup: without
+	// it, a wheel gesture whose pointer happens to sit over the menu row — the
+	// board name, the divider, the gap between buttons — is delivered to the
+	// menu and stops there. The canvas never sees it, so the board does not pan
+	// or zoom. Stock tldraw redispatches those events to the canvas precisely so
+	// its own chrome is not a dead zone, and dropping the hook made the row I
+	// widened with a board name into a wider dead zone. It matters most for
+	// exactly the case this work is about: scrolling to feel out a sensitivity
+	// with the cursor near the top of the window.
+	const rowRef = useRef<HTMLElement | null>(null)
+	usePassThroughWheelEvents(rowRef)
+
 	// WHY this gate is copied from DefaultMenuPanel rather than left out: tldraw
 	// HIDES the quick actions below tablet width, and dropping that made the bar
 	// run 184px off a 360px viewport — measured. Rendering them unconditionally
@@ -166,7 +179,7 @@ export function MenuPanelWithName() {
 			: breakpoint >= PORTRAIT_BREAKPOINT.TABLET
 
 	return (
-		<nav className="tlui-menu-zone">
+		<nav ref={rowRef} className="tlui-menu-zone">
 			<TldrawUiRow>
 				{MainMenu ? <MainMenu /> : null}
 				{/* Name BEFORE the page menu: his sketch puts identity next to the

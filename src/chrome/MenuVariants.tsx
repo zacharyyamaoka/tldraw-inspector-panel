@@ -17,6 +17,7 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { FileMenu, GestureMenu } from './LabMainMenu'
 import { setTuningOpen } from './tuningStore'
 import type React from 'react'
+import { PercentInput } from './PercentInput'
 import {
 	DEFAULT_GESTURE_SETTINGS,
 	MAX_SPEED_PERCENT,
@@ -319,18 +320,7 @@ function SpeedRow({ label, value, onChange, testId }: {
 				onChange={(event) => onChange(clampSpeedPercent(Number(event.target.value)))}
 				style={{ accentColor: 'var(--tl-color-selected)', width: 108, flex: '0 0 auto' }}
 			/>
-			<input
-				type="number"
-				data-testid={testId}
-				min={MIN_SPEED_PERCENT}
-				max={MAX_SPEED_PERCENT}
-				value={value}
-				onChange={(event) => onChange(clampSpeedPercent(Number(event.target.value)))}
-				// tldraw listens for keys globally; without this, typing a value
-				// containing "v" or "d" would also switch tools.
-				onKeyDown={(event) => event.stopPropagation()}
-				style={{ ...CONTROL_STYLE, width: 60, flex: '0 0 auto', textAlign: 'right' }}
-			/>
+			<PercentInput testId={testId} value={value} onCommit={onChange} style={{ ...CONTROL_STYLE, width: 60, flex: '0 0 auto', textAlign: 'right' }} />
 			<span style={{ fontSize: 12, color: 'var(--tl-color-text-3)', width: 12 }}>%</span>
 		</div>
 	)

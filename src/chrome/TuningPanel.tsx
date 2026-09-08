@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { PercentInput } from './PercentInput'
 import { DefaultHelperButtons } from 'tldraw'
 import {
 	MAX_SPEED_PERCENT,
@@ -138,20 +139,11 @@ function Slider({ label, value, onChange, testId }: {
 				onChange={(event) => onChange(clampSpeedPercent(Number(event.target.value)))}
 				style={{ accentColor: 'var(--tl-color-selected)', flex: '1 1 auto', minWidth: 0 }}
 			/>
-			<input
-				type="number"
-				data-testid={testId}
-				min={MIN_SPEED_PERCENT}
-				max={MAX_SPEED_PERCENT}
-				value={value}
-				onChange={(event) => onChange(clampSpeedPercent(Number(event.target.value)))}
-				onKeyDown={(event) => event.stopPropagation()}
-				style={{
+			<PercentInput testId={testId} value={value} onCommit={onChange} style={{
 					width: 52, height: 24, textAlign: 'right', fontSize: 12,
 					borderRadius: 'var(--tl-radius-2)', border: '1px solid var(--tl-color-low-border)',
 					background: 'var(--tl-color-panel)', color: 'var(--tl-color-text-1)', padding: '0 5px', outline: 'none',
-				}}
-			/>
+				}} />
 		</div>
 	)
 }
