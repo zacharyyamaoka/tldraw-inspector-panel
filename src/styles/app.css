@@ -174,3 +174,18 @@
    gate (tests/stock_pixels.mjs) is built to catch. Chrome that wants these tokens
    applies them locally via shadcn's per-component classes instead of a global
    reset — see docs/log.md's M1 entry for the measured deviation from the brief. */
+
+/* WHY this one narrow exception, added in M2: Base UI's `Popover`/`Tooltip`
+   portal their popup content to a sibling of `#root` under `<body>` by default
+   (`node_modules/@base-ui/react/popover/portal/PopoverPortal.d.ts`: "By default,
+   the portal element is appended to `<body>`"), so it is NOT a DOM descendant of
+   the Inspector dock — the dock's own `font-sans` class (Inspector.tsx) cannot
+   cascade to it, and without this it rendered in the browser's serif fallback
+   instead of the app font. This targets the popup's own `data-slot` rather than
+   `body` itself specifically so it cannot touch `.tl-container` or the canvas —
+   the exact mechanism the block above protects — and never matches anything
+   present during tests/stock_pixels.mjs's captures, which never open a popover. */
+[data-slot="popover-content"],
+[data-slot="tooltip-content"] {
+  font-family: var(--font-sans);
+}

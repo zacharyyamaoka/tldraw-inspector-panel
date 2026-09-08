@@ -24,6 +24,7 @@ import {
 	type Editor,
 	type TLUiStylePanelProps,
 } from 'tldraw'
+import { ChevronRight } from 'lucide-react'
 import { HexAlphaColorPicker } from 'react-colorful'
 
 import { Button } from '@/components/ui/button'
@@ -130,7 +131,18 @@ function TileGroup({ control, onChange }: { control: InspectorControl; onChange(
 									aria-label={option.label}
 									data-testid={`inspector-tile-${control.id}-${option.value}`}
 									size="sm"
-									className="size-7 p-0"
+									// WHY `text-foreground` here rather than leaving the glyph to
+									// inherit it: a `<button>` does not inherit `color` from its
+									// DOM ancestor the way ordinary elements do (the UA stylesheet
+									// gives it its own `ButtonText` system colour), so the SVG's
+									// `fill-current`/`stroke-current` (Glyph, below) resolved to
+									// black regardless of theme until this was explicit — dark
+									// mode painted black glyphs on dark grey. No separate pressed
+									// colour: shadcn's own Toggle only changes the background
+									// (`data-[state=on]:bg-muted`) and leaves text colour alone, so
+									// matching that is "whatever the shadcn toggle already does"
+									// rather than a third scheme.
+									className="size-7 p-0 text-foreground"
 								/>
 							}
 						>
@@ -144,6 +156,17 @@ function TileGroup({ control, onChange }: { control: InspectorControl; onChange(
 	)
 }
 
+/**
+ * WHY `flex-wrap` + `min-w-fit` rather than a fixed-column grid: this one
+ * component draws every segmented row in the model, from 3 options (Align)
+ * to 6 (Fill style) — a grid needs one column count that works for both ends
+ * of that range, and any fixed count either leaves a ragged half-empty last
+ * row on a small group or squeezes a wide one. Wrapping lets each row size to
+ * its own option count and only spill onto a second line when the labels
+ * genuinely do not fit the 280px dock, which is the clipping bug this
+ * replaces (Fill style used to cut off at "fill|", `lined-fill` pushed
+ * off-screen entirely).
+ */
 function SegmentGroup({ control, onChange }: { control: InspectorControl; onChange(value: InspectorValue): void }) {
 	const current = typeof control.value === 'string' ? control.value : undefined
 	return (
@@ -151,14 +174,14 @@ function SegmentGroup({ control, onChange }: { control: InspectorControl; onChan
 			value={current ? [current] : []}
 			onValueChange={(next) => { if (next[0] !== undefined) onChange(next[0]) }}
 			aria-label={control.label}
-			className="w-full"
+			className="w-full flex-wrap"
 		>
 			{(control.options ?? []).map((option) => (
 				<ToggleGroupItem
 					key={option.value}
 					value={option.value}
 					data-testid={`inspector-segment-${control.id}-${option.value}`}
-					className="flex-1 text-xs"
+					className="min-w-fit flex-1 text-xs"
 				>
 					{option.label}
 				</ToggleGroupItem>
@@ -374,44 +397,66 @@ function ControlRow({
 	)
 }
 
+/**
+ * The Figma/open-pencil section row: no filled background at rest, a sentence
+ * -case label, a chevron that rotates open, `hover:bg-accent` only.
+ *
+ * WHY an explicit reset (`border-0 bg-transparent p-0 appearance-none`)
+ * rather than relying on a global one: this lab's whole `app.css` premise
+ * (see its own top-of-file WHY) is importing Tailwind WITHOUT preflight, so
+ * `<button>` keeps the browser's own chrome — a light grey fill, an outset
+ * border, UA padding — until an author rule overrides it. Every other button
+ * on this panel either goes through shadcn's `Button`/`Toggle` (which already
+ * carry that reset in their own base classes) or sets every property the UA
+ * sheet would otherwise win; this is the one raw `<button>` case, so it
+ * carries the reset explicitly. Without it this exact row read as a filled
+ * grey bar with unreadable text in dark mode — a real bug, not a hypothetical
+ * one — because `text-foreground` was correctly winning the *text* colour
+ * while the untouched UA background stayed light in both themes.
+ */
 function GroupSection({
 	group,
+	isLast,
 	onChange,
 	onClear,
 }: {
 	group: InspectorGroup
+	isLast: boolean
 	onChange(id: string, value: InspectorValue, gestureStart: boolean): void
 	onClear(id: string): void
 }) {
 	return (
 		<Collapsible defaultOpen>
-			<div className="px-3 py-2">
-				<CollapsibleTrigger
-					render={
-						<button
-							type="button"
-							className="flex w-full items-center justify-between text-xs font-semibold tracking-wide text-foreground uppercase"
-						/>
-					}
-				>
-					{group.label}
-				</CollapsibleTrigger>
-				<CollapsibleContent className="mt-2 flex flex-col gap-2">
-					{captionBlocks(group.controls).map((block, index) => (
-						<div key={`${block.caption ?? 'block'}-${index}`} className="flex flex-col gap-1">
-							{block.caption ? (
-								<p className="text-[10px] text-muted-foreground">{block.caption}</p>
-							) : null}
-							<div className={block.controls.every((control) => control.paired) ? 'grid grid-cols-2 gap-1.5' : 'flex flex-col gap-1.5'}>
-								{block.controls.map((control) => (
-									<ControlRow key={control.id} control={control} onChange={onChange} onClear={onClear} />
-								))}
-							</div>
+			<CollapsibleTrigger
+				render={
+					<button
+						type="button"
+						data-testid={`inspector-group-${group.id}`}
+						className="group flex w-full appearance-none items-center justify-between gap-2 border-0 bg-transparent px-3 py-2 text-xs font-semibold text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+					/>
+				}
+			>
+				<span>{group.label}</span>
+				<ChevronRight
+					aria-hidden="true"
+					className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-data-[panel-open]:rotate-90"
+				/>
+			</CollapsibleTrigger>
+			<CollapsibleContent className="flex flex-col gap-2 px-3 pb-3">
+				{captionBlocks(group.controls).map((block, index) => (
+					<div key={`${block.caption ?? 'block'}-${index}`} className="flex flex-col gap-1">
+						{block.caption ? (
+							<p className="text-[10px] text-muted-foreground">{block.caption}</p>
+						) : null}
+						<div className={block.controls.every((control) => control.paired) ? 'grid grid-cols-2 gap-1.5' : 'flex flex-col gap-1.5'}>
+							{block.controls.map((control) => (
+								<ControlRow key={control.id} control={control} onChange={onChange} onClear={onClear} />
+							))}
 						</div>
-					))}
-				</CollapsibleContent>
-			</div>
-			<Separator />
+					</div>
+				))}
+			</CollapsibleContent>
+			{isLast ? null : <Separator />}
 		</Collapsible>
 	)
 }
@@ -458,8 +503,14 @@ export function InspectorView({
 			<ScrollArea className="min-h-0 flex-1">
 				{model ? (
 					<div className="flex flex-col">
-						{model.groups.map((group) => (
-							<GroupSection key={group.id} group={group} onChange={onChange} onClear={onClear} />
+						{model.groups.map((group, index) => (
+							<GroupSection
+								key={group.id}
+								group={group}
+								isLast={index === model.groups.length - 1}
+								onChange={onChange}
+								onClear={onClear}
+							/>
 						))}
 					</div>
 				) : (
@@ -591,7 +642,18 @@ export function Inspector({ isMobile: _isMobile, styles: _styles, children: _chi
 		<div
 			ref={ref}
 			data-testid="inspector"
-			className="pointer-events-auto absolute top-0 right-0 bottom-0 w-[280px] border-l border-border bg-background text-foreground"
+			// WHY `font-sans` here at all: this lab's `app.css` deliberately drops
+			// shadcn's own `@layer base { html { @apply font-sans } }` block (see
+			// its top-of-file WHY) to protect the pixel gate from a global reset —
+			// which also means NOTHING sets a sans-serif font anywhere by default,
+			// dock included. Without this the whole panel silently rendered in the
+			// browser's serif fallback (`Times New Roman`), not just a missed
+			// detail on one popover. `font-sans` here fixes every element that is
+			// an actual DOM descendant of the dock; it does NOT reach a shadcn
+			// `Popover`'s content, which Base UI portals to a sibling of `#root`
+			// under `<body>` — see the matching `[data-slot="popover-content"]`
+			// rule in app.css for that one.
+			className="pointer-events-auto absolute top-0 right-0 bottom-0 w-[280px] border-l border-border bg-background font-sans text-foreground"
 		>
 			<InspectorPanel editor={editor} />
 		</div>
