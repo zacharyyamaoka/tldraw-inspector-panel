@@ -24,4 +24,12 @@
 // the reset preflight would have done, applied to the two raw buttons that
 // need it. The shadow/radius/background below were already right: they are
 // tldraw's own `.tlui-style-panel__wrapper` values, verified identical.
-export const NATIVE_PANEL_CHROME = 'appearance-none border-0 font-sans text-[11px] leading-none bg-[var(--tl-color-panel)] text-[var(--tl-color-text)] shadow-[var(--tl-shadow-2)] rounded-[var(--tl-radius-3)]'
+//
+// The `group-data-[dock-open]/cluster:*` half: the shadow and the panel fill
+// are what make these controls read as FLOATING over the board — correct while
+// the drawer is closed and they sit on the canvas. The moment the drawer opens
+// they sit on the panel instead, where a drop shadow (and a panel-coloured chip
+// on a panel-coloured surface) reads as a sticker rather than chrome. Flat with
+// a hover tint is what Figma does in the same position, and it is what the
+// panel's own IconButtons already do one row below.
+export const NATIVE_PANEL_CHROME = 'appearance-none border-0 font-sans text-[11px] leading-none bg-[var(--tl-color-panel)] text-[var(--tl-color-text)] shadow-[var(--tl-shadow-2)] rounded-[var(--tl-radius-3)] group-data-[dock-open]/cluster:bg-transparent group-data-[dock-open]/cluster:shadow-none'

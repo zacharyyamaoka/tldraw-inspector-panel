@@ -21,6 +21,7 @@ import {
 import {
 	PRIMITIVE_OVERRIDE_META_KEY as KEY,
 	hasPrimitiveOverride,
+	readPrimitiveOverride,
 	markResolvesPrimitiveOverrides,
 } from './overrides'
 
@@ -305,15 +306,28 @@ describe('getPrimitiveInspectorModel', () => {
 			.toContain('strokeRoundness')
 	})
 
-	it('clears a corner radius when the rectangle tile un-rounds the shape', () => {
+	it('drops a corner radius when the geometry can no longer show one', () => {
 		const shape = geo('a')
 		const { editor } = fakeEditor([shape])
 		applyPrimitiveInspectorControl(editor, 'cornerRadius', 40)
-		expect(shape.props.geo).toBe('rounded-rect')
-		// `read` maps the rounded rectangle to `rectangle`, so this IS the tile a
-		// person clicks to un-round — and it used to skip the cleanup.
-		applyPrimitiveInspectorControl(editor, 'geo', 'rectangle')
+		// An ellipse has no corners, so a leftover radius would be invisible and
+		// then REAPPEAR — reading 40, wearing its overridden dot — the moment the
+		// shape came back to a rectangle, over a canvas painting square corners.
+		applyPrimitiveInspectorControl(editor, 'geo', 'ellipse')
 		expect(hasPrimitiveOverride(shape)).toBe(false)
+	})
+
+	it('keeps the radius when the rectangle tile is picked, since that is where it lives', () => {
+		const shape = geo('a')
+		const { editor } = fakeEditor([shape])
+		applyPrimitiveInspectorControl(editor, 'cornerRadius', 40)
+		// Regression guard. While a radius implied a non-stock geo, `rectangle`
+		// was the tile that meant "un-round me" and the write cleared it. Now the
+		// radius lives in meta ON a stock rectangle, so clearing here would eat a
+		// value the person had just set, from a tile that looks already-selected.
+		applyPrimitiveInspectorControl(editor, 'geo', 'rectangle')
+		expect(shape.props.geo).toBe('rectangle')
+		expect(readPrimitiveOverride(shape).cornerRadius).toBe(40)
 	})
 
 	it('offers Unlock when ANY selected shape is locked, not only when all are', () => {
@@ -520,15 +534,24 @@ describe('applyPrimitiveInspectorControl', () => {
 })
 
 describe('corner radius', () => {
-	it('switches a rectangle onto the registered rounded geometry and back', () => {
+	it('keeps the record a STOCK rectangle and carries the radius in meta', () => {
 		const shape = geo('a')
 		const { editor } = fakeEditor([shape])
 		applyPrimitiveInspectorControl(editor, 'cornerRadius', 24)
-		expect(shape.props.geo).toBe('rounded-rect')
+
+		// The contract Zach set: "the board can run in a stock tldraw
+		// whiteboard... so long as no additional code is required to SEE it."
+		// A radius therefore may not touch `geo`. It used to write
+		// 'rounded-rect' here, and the app's own Stock check reported the
+		// result verbatim — "stock tldraw would refuse this record: geo
+		// 'rounded-rect' is not a stock value" — so a board with one rounded
+		// corner failed VALIDATION in plain tldraw rather than degrading.
+		// Now the radius lives in meta, which tldraw carries and ignores:
+		// plain tldraw opens the board and draws square corners, and only
+		// configuredUtils.ts's RoundedRectPaintGeoShapeUtil paints the curve.
+		expect(shape.props.geo).toBe('rectangle')
 		expect(shape.meta[KEY]).toEqual({ cornerRadius: 24 })
 
-		// Zero has to leave the record on the plain stock rectangle: a round
-		// trip through the control must not strand a non-stock geometry.
 		applyPrimitiveInspectorControl(editor, 'cornerRadius', 0)
 		expect(shape.props.geo).toBe('rectangle')
 		expect(shape.meta[KEY]).toBeNull()

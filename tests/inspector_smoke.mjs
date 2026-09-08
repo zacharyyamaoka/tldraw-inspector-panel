@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   clickElement, delay, drag, elementBox, evaluate, freePort, key, launchChrome,
-  makeChecklist, openCdpPage, shortcut, typeSlowly, waitFor,
+  makeChecklist, openCdpPage, sampleRenderedPixel, shortcut, typeSlowly, waitFor,
 } from './cdp_kit.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -1344,18 +1344,52 @@ async function main() {
         checklist.add('clearing fillOpacity restores the original fill', cleared === before)
       }
 
-      // Corner radius > 0 switches geo to the rounded rect and back at 0.
+      // Corner radius keeps the RECORD stock and only changes the paint.
+      //
+      // Zach's rule for this repo: "the board can run in a stock tldr
+      // whiteboard... so long as no additional code is required to see it."
+      // This used to write geo: 'rounded-rect', and the app's own Stock check
+      // reported it verbatim — "stock tldraw would refuse this record" — so a
+      // board with one rounded corner failed VALIDATION rather than degrading.
+      // Both halves are asserted here: the record stays a stock rectangle, and
+      // the corner really is painted round, read off the SCREEN rather than
+      // off a style (a computed style already lied once in this suite).
       {
+        // The oracle is tldraw's own HIT TEST, not a sampled pixel. It reads the
+        // geometry RoundedRectPaintGeoShapeUtil swaps, so it answers the exact
+        // question — is this corner part of the shape — with no dependence on
+        // zoom, stroke width or where a screenshot lands. (The first attempt
+        // sampled 3px inside the bounding box and read the blue stroke in BOTH
+        // states: at this zoom that point is under the 'draw' stroke band, so
+        // it could not tell them apart. A pixel assertion is only as good as
+        // the pixel it picks; this one has nothing to pick.)
+        const cornerIsSolid = async () => await evaluate(page, `(() => {
+          const ed = window.__lab.editor
+          const b = ed.getShapePageBounds('${RECT_ID}')
+          // Well inside a square corner, comfortably OUTSIDE a 20px-radius arc,
+          // which passes ~8.3px (20 * (sqrt2 - 1)) from the corner diagonally.
+          return ed.isPointInShape('${RECT_ID}', { x: b.x + 3, y: b.y + 3 }, { hitInside: true, margin: 0 })
+        })()`)
+
         await replaceFieldText(page, '[data-testid="inspector-number-cornerRadius"]', '20')
         await key(page, 'Enter', 'Enter')
-        await delay(150)
+        await delay(250)
         const rounded = await getShape(page, RECT_ID)
-        checklist.add('corner radius > 0 switches to the rounded geo', rounded.props.geo === 'rounded-rect')
+        checklist.add('corner radius keeps the record a stock rectangle', rounded.props.geo === 'rectangle')
+        checklist.add(`corner radius is carried in meta (${JSON.stringify(rounded.meta?.primitiveOverride ?? null)})`, rounded.meta?.primitiveOverride?.cornerRadius === 20)
+        const roundedCorner = await cornerIsSolid()
+
         await replaceFieldText(page, '[data-testid="inspector-number-cornerRadius"]', '0')
         await key(page, 'Enter', 'Enter')
-        await delay(150)
+        await delay(250)
         const flat = await getShape(page, RECT_ID)
-        checklist.add('corner radius back to 0 switches back to rectangle', flat.props.geo === 'rectangle')
+        checklist.add('corner radius back to 0 leaves a plain stock rectangle', flat.props.geo === 'rectangle')
+        checklist.add('corner radius 0 clears the override entirely', !flat.meta?.primitiveOverride?.cornerRadius)
+        const squareCorner = await cornerIsSolid()
+        checklist.add(
+          `the radius really changes the SHAPE, not just a stored number (corner hit: rounded=${roundedCorner} square=${squareCorner})`,
+          roundedCorner === false && squareCorner === true,
+        )
       }
 
       // §2.2 fence: select A, edit Opacity, click B — A changes, B does not.

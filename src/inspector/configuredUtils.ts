@@ -41,6 +41,7 @@ import {
 	defaultShapeUtils,
 	getColorValue,
 	type TLAnyShapeUtilConstructor,
+	type SvgExportContext,
 	type TLGeoShape,
 	type TLThemeColors,
 } from 'tldraw'
@@ -152,6 +153,45 @@ const ConfiguredGeoShapeUtil = GeoShapeUtil.configure({
 		geoOverrideDisplayValues(shape, defaultGeoFillColor(shape, theme.colors[colorMode])),
 })
 
+/**
+ * Rounded corners painted onto a shape whose RECORD stays a stock rectangle.
+ *
+ * WHY this indirection instead of just writing the custom geo into the record,
+ * which is what this app used to do: Zach's requirement is that a board opens
+ * in a plain, unconfigured stock tldraw. A record carrying
+ * `geo: 'rounded-rect'` does not merely look different there — the app's own
+ * Stock check reports it verbatim: "stock tldraw would refuse this record: geo
+ * 'rounded-rect' is not a stock value". It fails validation outright.
+ *
+ * So the radius lives where it degrades instead of breaking: `meta`, which
+ * tldraw carries untouched and ignores. The record stays `geo: 'rectangle'`,
+ * plain tldraw opens the board and draws square corners, and only THIS app
+ * swaps in the rounded path — on the shape object handed to the painter, never
+ * on the one in the store.
+ *
+ * WHY a subclass rather than `customGeoTypes: { rectangle: ... }`: tldraw
+ * rejects that outright — GeoShapeUtil.mjs warns "customGeoTypes key
+ * 'rectangle' collides with a built-in geo type and will be ignored". These
+ * four methods are the complete set that resolve a geo shape to a path
+ * (getGeometry, component, getIndicatorPath, toSvg), so swapping the geo for
+ * all four keeps geometry, hit-testing, the selection indicator and SVG export
+ * agreeing with each other. The custom type stays registered because it owns
+ * the path; it just never reaches a record any more.
+ */
+class RoundedRectPaintGeoShapeUtil extends ConfiguredGeoShapeUtil {
+	/** The shape as PAINTED — never the shape as stored. */
+	private forPaint(shape: TLGeoShape): TLGeoShape {
+		const radius = readPrimitiveOverride(shape).cornerRadius ?? 0
+		if (radius <= 0 || shape.props.geo !== 'rectangle') return shape
+		return { ...shape, props: { ...shape.props, geo: ROUNDED_RECT_GEO as TLGeoShape['props']['geo'] } }
+	}
+
+	override getGeometry(shape: TLGeoShape) { return super.getGeometry(this.forPaint(shape)) }
+	override component(shape: TLGeoShape) { return super.component(this.forPaint(shape)) }
+	override getIndicatorPath(shape: TLGeoShape) { return super.getIndicatorPath(this.forPaint(shape)) }
+	override toSvg(shape: TLGeoShape, ctx: SvgExportContext) { return super.toSvg(this.forPaint(shape), ctx) }
+}
+
 const ConfiguredArrowShapeUtil = ArrowShapeUtil.configure({
 	// WHY a resolvedFill arg here, added alongside the census sweep: the
 	// `fillColor` paint row already applied to arrows (HAS_FILL sees their
@@ -215,7 +255,7 @@ const REPLACED_TYPES = new Set(['geo', 'arrow', 'text', 'line', 'draw', 'note', 
  */
 export const CONFIGURED_SHAPE_UTILS: TLAnyShapeUtilConstructor[] = [
 	...[
-		withPrimitiveOverrides(ConfiguredGeoShapeUtil),
+		withPrimitiveOverrides(RoundedRectPaintGeoShapeUtil),
 		withPrimitiveOverrides(ConfiguredArrowShapeUtil),
 		withPrimitiveOverrides(ConfiguredTextShapeUtil),
 		ConfiguredLineShapeUtil,

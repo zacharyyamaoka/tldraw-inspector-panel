@@ -721,10 +721,17 @@ const FIELDS: FieldSpec[] = [
 			// the shapes this row was showing, and record the choice for the next
 			// shape drawn.
 			writeStyle(editor, shapes, GeoShapeGeoStyle as EnumStyleProp<string>, 'geo', geo)
-			// `read` maps the rounded rectangle back to `rectangle`, so the tile a
-			// person clicks to UN-round is `rectangle` — which the old guard
-			// skipped, leaving the row reading 40 over hard square corners.
-			if (geo === ROUNDED_RECT_GEO) return
+			// `rectangle` is now exactly where a radius is LEGAL — it lives in meta
+			// on a stock rectangle record, not on a custom geo — so picking that
+			// tile must keep it. The guard used to name ROUNDED_RECT_GEO instead,
+			// which was right while a radius implied a non-stock geo and became a
+			// radius-eating bug the moment it did not: clicking the tile a rounded
+			// rectangle ALREADY reads as would have silently cleared it.
+			// A legacy record still carrying the custom geo migrates cleanly
+			// through this same path — writeStyle puts it back on the stock
+			// `rectangle`, the guard keeps its radius, and the paint seam in
+			// configuredUtils.ts renders it exactly as before.
+			if (geo === 'rectangle') return
 			const stale = shapes.filter((shape) => readPrimitiveOverride(shape).cornerRadius !== undefined)
 			if (stale.length === 0) return
 			updateShapes(editor, stale.map((shape) => ({
@@ -758,7 +765,11 @@ const FIELDS: FieldSpec[] = [
 			updateShapes(editor, shapes.map((shape) => ({
 				id: shape.id,
 				type: shape.type,
-				props: { geo: radius > 0 ? ROUNDED_RECT_GEO : 'rectangle' },
+				// No `props` write: the record keeps its stock `geo: 'rectangle'` so a
+				// board still opens in plain tldraw (which draws square corners).
+				// configuredUtils.ts's RoundedRectPaintGeoShapeUtil is what makes THIS
+				// app paint the curve, from the meta below. Writing the custom geo here
+				// is what made the Stock check report the record as refused.
 				meta: writePrimitiveOverride(shape, { cornerRadius: radius > 0 ? radius : undefined }),
 			})))
 		},

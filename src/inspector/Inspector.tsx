@@ -1063,7 +1063,14 @@ export function Inspector(props: TLUiStylePanelProps) {
 					    above an OPEN dock too. */}
 					<div
 						data-testid="inspector-control-cluster"
-						className="pointer-events-auto fixed top-2 z-[310] flex items-center gap-1.5"
+						// `data-dock-open` drives the chrome below it (nativeChrome.ts):
+						// floating over the canvas these controls need tldraw's panel
+						// shadow to lift off the board, but ON the open panel that same
+						// shadow reads as a sticker stuck to a flat surface. Zach, looking
+						// at both states: "That looks fine on the whiteboard. but get rid
+						// of the drop shadow etc on the panel view."
+						data-dock-open={open ? '' : undefined}
+						className="group/cluster pointer-events-auto fixed top-2 z-[310] flex items-center gap-1.5"
 						style={{ right: open ? 8 : (clusterRight ?? undefined) }}
 					>
 						<StockCheckButton />
