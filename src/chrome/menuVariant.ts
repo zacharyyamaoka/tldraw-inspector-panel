@@ -9,10 +9,17 @@
  */
 export type MenuVariant = 1 | 2 | 3
 
+/**
+ * V3 is the DEFAULT now — Zach picked it after the /babble comparison ("I agree
+ * with this please implement it: V3 App bar + Settings"). V1 and V2 stay
+ * reachable at `?menu=1` / `?menu=2` so the comparison in
+ * reports/menu-babble-2026-09-08.html keeps working rather than rotting the
+ * moment a winner is chosen.
+ */
 export function readMenuVariant(): MenuVariant {
-	if (typeof window === 'undefined') return 1
+	if (typeof window === 'undefined') return 3
 	const raw = Number(new URLSearchParams(window.location.search).get('menu'))
-	return raw === 2 || raw === 3 ? raw : 1
+	return raw === 1 || raw === 2 ? raw : 3
 }
 
 export const MENU_VARIANT_NAMES: Record<MenuVariant, string> = {

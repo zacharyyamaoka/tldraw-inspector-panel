@@ -1,7 +1,7 @@
 import type React from 'react'
 import { Board, readSeedMode } from './board/mount'
 import { CONFIGURED_SHAPE_UTILS } from './inspector/configuredUtils'
-import { DocumentNamePanel } from './chrome/DocumentNamePanel'
+import { MenuPanelWithName } from './chrome/DocumentNamePanel'
 import { LabContextMenu } from './chrome/LabContextMenu'
 import { LabMainMenu } from './chrome/LabMainMenu'
 import { BoardMenuVariant, SettingsDialogVariant } from './chrome/MenuVariants'
@@ -56,7 +56,9 @@ export default function App() {
         StylePanel: Inspector,
         MainMenu: MENU_BY_VARIANT[readMenuVariant()],
         ContextMenu: LabContextMenu,
-        TopPanel: DocumentNamePanel,
+        // The name rides in the MENU zone, beside the hamburger — see
+        // MenuPanelWithName's own WHY for why TopPanel was the wrong slot.
+        MenuPanel: MenuPanelWithName,
       }}
       shapeUtils={CONFIGURED_SHAPE_UTILS}
       themes={seedMode ? undefined : readStoredThemes()}

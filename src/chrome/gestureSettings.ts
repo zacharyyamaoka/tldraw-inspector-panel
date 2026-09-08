@@ -70,6 +70,19 @@ export interface GestureSettings {
 
 export const SPEED_PERCENT_OPTIONS = [25, 50, 75, 100, 150, 200] as const
 
+/** The range an exact value may take. Zach: "it would be nice if I can set the
+ *  scroll and zoom sensity exactly to a value that I want" — so the presets are
+ *  shortcuts, not the vocabulary. Clamped rather than free: 0 would freeze the
+ *  canvas with no obvious way back, and past ~400% a single notch crosses the
+ *  whole board. */
+export const MIN_SPEED_PERCENT = 5
+export const MAX_SPEED_PERCENT = 400
+
+export function clampSpeedPercent(value: number): number {
+	if (!Number.isFinite(value)) return 100
+	return Math.min(MAX_SPEED_PERCENT, Math.max(MIN_SPEED_PERCENT, Math.round(value)))
+}
+
 /**
  * WHY these particular defaults: they are what tldraw ALREADY does, so a fresh
  * load behaves exactly like stock and the feature only ever shows up when
@@ -119,8 +132,8 @@ export function loadGestureSettings(): GestureSettings {
 			if (isCommand(candidate)) bindings[gesture] = candidate
 		}
 		const percent = (value: unknown, fallback: number) =>
-			typeof value === 'number' && Number.isFinite(value) && value >= 10 && value <= 400
-				? value
+			typeof value === 'number' && Number.isFinite(value)
+				? clampSpeedPercent(value)
 				: fallback
 		return {
 			pasteUnderCursor: typeof parsed.pasteUnderCursor === 'boolean'

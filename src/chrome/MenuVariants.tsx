@@ -15,8 +15,12 @@ import {
 } from 'tldraw'
 import { useSyncExternalStore } from 'react'
 import { FileMenu, GestureMenu } from './LabMainMenu'
+import type React from 'react'
 import {
-	SPEED_PERCENT_OPTIONS,
+	DEFAULT_GESTURE_SETTINGS,
+	MAX_SPEED_PERCENT,
+	MIN_SPEED_PERCENT,
+	clampSpeedPercent,
 	WHEEL_COMMAND_LABELS,
 	WHEEL_GESTURE_LABELS,
 	getGestureSettings,
@@ -91,64 +95,191 @@ function SettingsDialog({ onClose }: { onClose(): void }) {
 				<TldrawUiDialogTitle>Settings</TldrawUiDialogTitle>
 				<TldrawUiDialogCloseButton />
 			</TldrawUiDialogHeader>
-			<TldrawUiDialogBody style={{ maxWidth: 460, display: 'flex', flexDirection: 'column', gap: 16 }}>
-				<label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-					<input
-						type="checkbox"
-						data-testid="settings-paste-under-cursor"
-						checked={settings.pasteUnderCursor}
-						onChange={(event) => setGestureSettings({ ...settings, pasteUnderCursor: event.target.checked })}
-					/>
-					Copy/paste under cursor
-				</label>
+			{/* WHY inline styles off `--tl-*` tokens rather than this repo's own
+			    Tailwind/shadcn classes: the dialog is tldraw's own shell, and Zach
+			    asked for it to "better match clean tldraw stock UI". Borrowing the
+			    engine's colour, radius and font tokens means it follows tldraw's
+			    light/dark themes for free — a shadcn control here would be a second
+			    design language inside a stock frame. */}
+			<TldrawUiDialogBody style={{ maxWidth: 420, minWidth: 360 }}>
+				<div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '4px 0 8px' }}>
+					<Section title="Pointer">
+						<CheckRow
+							label="Copy/paste under cursor"
+							testId="settings-paste-under-cursor"
+							checked={settings.pasteUnderCursor}
+							onChange={(pasteUnderCursor) => setGestureSettings({ ...settings, pasteUnderCursor })}
+						/>
+					</Section>
 
-				<div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px 12px', alignItems: 'center' }}>
-					{GESTURES.map((gesture) => (
-						<Row key={gesture} label={WHEEL_GESTURE_LABELS[gesture]}>
-							<select
-								data-testid={`settings-${gesture}`}
-								value={settings.bindings[gesture]}
-								onChange={(event) => setGestureSettings({
-									...settings,
-									bindings: { ...settings.bindings, [gesture]: event.target.value as WheelCommand },
-								})}
-							>
-								{COMMANDS.map((command) => (
-									<option key={command} value={command}>{WHEEL_COMMAND_LABELS[command]}</option>
-								))}
-							</select>
-						</Row>
-					))}
-					<Row label="Scroll sensitivity">
-						<Percent value={settings.panSpeedPercent} onPick={(panSpeedPercent) => setGestureSettings({ ...settings, panSpeedPercent })} testId="settings-pan-speed" />
-					</Row>
-					<Row label="Zoom sensitivity">
-						<Percent value={settings.zoomSpeedPercent} onPick={(zoomSpeedPercent) => setGestureSettings({ ...settings, zoomSpeedPercent })} testId="settings-zoom-speed" />
-					</Row>
+					<Section title="Wheel">
+						{GESTURES.map((gesture) => (
+							<Row key={gesture} label={WHEEL_GESTURE_LABELS[gesture]}>
+								<Picker
+									testId={`settings-${gesture}`}
+									value={settings.bindings[gesture]}
+									options={COMMANDS.map((command) => ({ value: command, label: WHEEL_COMMAND_LABELS[command] }))}
+									onChange={(value) => setGestureSettings({
+										...settings,
+										bindings: { ...settings.bindings, [gesture]: value as WheelCommand },
+									})}
+								/>
+							</Row>
+						))}
+					</Section>
+
+					<Section title="Sensitivity">
+						<SpeedRow
+							label="Scroll"
+							testId="settings-pan-speed"
+							value={settings.panSpeedPercent}
+							onChange={(panSpeedPercent) => setGestureSettings({ ...settings, panSpeedPercent })}
+						/>
+						<SpeedRow
+							label="Zoom"
+							testId="settings-zoom-speed"
+							value={settings.zoomSpeedPercent}
+							onChange={(zoomSpeedPercent) => setGestureSettings({ ...settings, zoomSpeedPercent })}
+						/>
+					</Section>
 				</div>
 			</TldrawUiDialogBody>
 			<TldrawUiDialogFooter className="tlui-dialog__footer__actions">
-				<TldrawUiButton type="primary" onClick={onClose}><TldrawUiButtonLabel>Done</TldrawUiButtonLabel></TldrawUiButton>
+				<TldrawUiButton type="normal" onClick={() => setGestureSettings(DEFAULT_GESTURE_SETTINGS)}>
+					<TldrawUiButtonLabel>Reset</TldrawUiButtonLabel>
+				</TldrawUiButton>
+				<TldrawUiButton type="primary" onClick={onClose}>
+					<TldrawUiButtonLabel>Done</TldrawUiButtonLabel>
+				</TldrawUiButton>
 			</TldrawUiDialogFooter>
 		</>
 	)
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+const LABEL_STYLE: React.CSSProperties = {
+	fontSize: 12,
+	color: 'var(--tl-color-text-1)',
+	flex: '1 1 auto',
+	minWidth: 0,
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
 	return (
-		<>
-			<span style={{ fontSize: 13 }}>{label}</span>
+		<div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+			<div style={{
+				fontSize: 11,
+				fontWeight: 600,
+				letterSpacing: '0.04em',
+				textTransform: 'uppercase',
+				color: 'var(--tl-color-text-3)',
+				padding: '0 0 6px',
+			}}>{title}</div>
 			{children}
-		</>
+		</div>
 	)
 }
 
-function Percent({ value, onPick, testId }: { value: number; onPick(v: number): void; testId: string }) {
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
-		<select data-testid={testId} value={value} onChange={(event) => onPick(Number(event.target.value))}>
-			{SPEED_PERCENT_OPTIONS.map((percent) => (
-				<option key={percent} value={percent}>{percent === 100 ? '100% (default)' : `${percent}%`}</option>
+		<div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 32 }}>
+			<span style={LABEL_STYLE}>{label}</span>
+			{children}
+		</div>
+	)
+}
+
+function CheckRow({ label, checked, onChange, testId }: {
+	label: string
+	checked: boolean
+	onChange(next: boolean): void
+	testId: string
+}) {
+	return (
+		<label style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 32, cursor: 'pointer' }}>
+			<input
+				type="checkbox"
+				data-testid={testId}
+				checked={checked}
+				onChange={(event) => onChange(event.target.checked)}
+				style={{ accentColor: 'var(--tl-color-selected)', width: 15, height: 15, margin: 0 }}
+			/>
+			<span style={LABEL_STYLE}>{label}</span>
+		</label>
+	)
+}
+
+const CONTROL_STYLE: React.CSSProperties = {
+	height: 28,
+	borderRadius: 'var(--tl-radius-2)',
+	border: '1px solid var(--tl-color-low-border)',
+	background: 'var(--tl-color-panel)',
+	color: 'var(--tl-color-text-1)',
+	font: 'inherit',
+	fontSize: 12,
+	padding: '0 6px',
+	outline: 'none',
+}
+
+function Picker({ value, options, onChange, testId }: {
+	value: string
+	options: Array<{ value: string; label: string }>
+	onChange(value: string): void
+	testId: string
+}) {
+	return (
+		<select
+			data-testid={testId}
+			value={value}
+			onChange={(event) => onChange(event.target.value)}
+			style={{ ...CONTROL_STYLE, width: 150, flex: '0 0 auto' }}
+		>
+			{options.map((option) => (
+				<option key={option.value} value={option.value}>{option.label}</option>
 			))}
 		</select>
+	)
+}
+
+/**
+ * A slider for feel and a number box for an exact value, kept in sync.
+ *
+ * WHY both: dragging is how you FIND the right sensitivity, and typing is how
+ * you SET it — Zach asked for the second after using the first ("it would be
+ * nice if I can set the scroll and zoom sensity exactly to a value that I
+ * want"). The presets became slider detents rather than the whole vocabulary.
+ */
+function SpeedRow({ label, value, onChange, testId }: {
+	label: string
+	value: number
+	onChange(percent: number): void
+	testId: string
+}) {
+	return (
+		<div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 32 }}>
+			<span style={LABEL_STYLE}>{label}</span>
+			<input
+				type="range"
+				aria-label={`${label} sensitivity`}
+				min={MIN_SPEED_PERCENT}
+				max={MAX_SPEED_PERCENT}
+				step={5}
+				value={value}
+				onChange={(event) => onChange(clampSpeedPercent(Number(event.target.value)))}
+				style={{ accentColor: 'var(--tl-color-selected)', width: 108, flex: '0 0 auto' }}
+			/>
+			<input
+				type="number"
+				data-testid={testId}
+				min={MIN_SPEED_PERCENT}
+				max={MAX_SPEED_PERCENT}
+				value={value}
+				onChange={(event) => onChange(clampSpeedPercent(Number(event.target.value)))}
+				// tldraw listens for keys globally; without this, typing a value
+				// containing "v" or "d" would also switch tools.
+				onKeyDown={(event) => event.stopPropagation()}
+				style={{ ...CONTROL_STYLE, width: 60, flex: '0 0 auto', textAlign: 'right' }}
+			/>
+			<span style={{ fontSize: 12, color: 'var(--tl-color-text-3)', width: 12 }}>%</span>
+		</div>
 	)
 }

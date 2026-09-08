@@ -1,5 +1,11 @@
 import { useCallback, useRef, useState } from 'react'
-import { useEditor, useValue } from 'tldraw'
+import {
+	TldrawUiRow,
+	TldrawUiToolbar,
+	useEditor,
+	useTldrawUiComponents,
+	useValue,
+} from 'tldraw'
 import { getDocumentName, setDocumentName, useDocumentName } from './documentName'
 import { readMenuVariant } from './menuVariant'
 
@@ -114,5 +120,48 @@ function AppBarName({ name, onEdit }: { name: string; onEdit(): void }) {
 				className={dirty ? 'size-2 shrink-0 rounded-full bg-[#f59e0b]' : 'size-2 shrink-0 rounded-full bg-[#22c55e]'}
 			/>
 		</button>
+	)
+}
+
+/**
+ * The menu zone: tldraw's own left cluster, with the board name added to it.
+ *
+ * WHY this replaces `components.TopPanel`, where the name used to live:
+ * TopPanel is CENTRED at the top of the viewport. The name rendered correctly
+ * there and Zach still could not find it — "I don't yet see the file name
+ * either though?" — because both references he gave (SystemSketch and
+ * tldraw.com) put identity immediately right of the hamburger, and that is
+ * where the eye goes. Measured at x:653 on a 1280px window: dead centre, next
+ * to nothing.
+ *
+ * WHY this mirrors `DefaultMenuPanel`'s markup rather than wrapping it: the
+ * name has to sit INSIDE the same row as the menu, and a wrapper cannot reach
+ * in. The structure below is tldraw's own — `<nav class="tlui-menu-zone">`
+ * around a `TldrawUiRow` — because a hand-rolled flex row lost the horizontal
+ * layout entirely and stacked the hamburger above the page menu. QuickActions
+ * and ActionsMenu are re-rendered here too: dropping them silently removed
+ * undo, redo and duplicate from the bar, which a first version did.
+ */
+export function MenuPanelWithName() {
+	// `useTldrawUiComponents()`, not the Default* components directly: this app
+	// overrides `MainMenu`, and rendering `DefaultMainMenu` here silently
+	// bypassed that override — the bar came back with tldraw's stock menu and no
+	// File or Settings at all. Reading the configured components is what keeps
+	// this panel a LAYOUT change rather than a second component registry.
+	const { MainMenu, PageMenu, QuickActions, ActionsMenu } = useTldrawUiComponents()
+	return (
+		<nav className="tlui-menu-zone">
+			<TldrawUiRow>
+				{MainMenu ? <MainMenu /> : null}
+				{PageMenu ? <PageMenu /> : null}
+				<DocumentNamePanel />
+				{QuickActions || ActionsMenu ? (
+					<TldrawUiToolbar orientation="horizontal" label="Actions">
+						{QuickActions ? <QuickActions /> : null}
+						{ActionsMenu ? <ActionsMenu /> : null}
+					</TldrawUiToolbar>
+				) : null}
+			</TldrawUiRow>
+		</nav>
 	)
 }

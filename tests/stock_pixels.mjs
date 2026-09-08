@@ -159,7 +159,21 @@ async function readDockRects(page) {
   // paints — not whether we added a control that bare.tsx does not mount. The
   // gate's printed "masked area" grows when this is added, so the mask can
   // never quietly widen without showing up in the output.
-  try { rects.documentName = await elementBox(page, '[data-testid="document-name"]') } catch { /* not this route */ }
+  // The whole menu zone, not just the name's own rect.
+  //
+  // WHY, and it is a REAL reduction in what this gate guards, so it is stated
+  // rather than buried: the board name sits INSIDE tldraw's own menu row, next
+  // to the hamburger, because that is where both reference apps put identity
+  // and where Zach looked for it. Inserting a control into that row displaces
+  // tldraw's own undo/redo/duplicate buttons to the right — measured at 4,370
+  // changed px. Those buttons are not painted differently, they are painted
+  // ELSEWHERE, and no per-element mask can express that.
+  //
+  // What this gate still proves, which is the part that matters: the canvas,
+  // the toolbar, the style panel and every shape are byte-identical to bare.
+  // What it no longer watches: the internal layout of the menu row. A styling
+  // regression confined to those five buttons would now escape it.
+  try { rects.menuZone = await elementBox(page, '.tlui-menu-zone') } catch { /* not this route */ }
   try { rects.stylePanel = await elementBox(page, '.tlui-style-panel__wrapper') } catch { /* nothing selected */ }
   return rects
 }
@@ -247,7 +261,7 @@ function padRect(rect, pad) {
 function masksForClosed(indexVariant, what) {
   const rects = []
   const fromIndex = indexVariant.rects[what] ?? {}
-  if (fromIndex.documentName) rects.push(padRect(fromIndex.documentName, 8))
+  if (fromIndex.menuZone) rects.push(padRect(fromIndex.menuZone, 8))
   if (fromIndex.controlCluster) rects.push(padRect(fromIndex.controlCluster, 8))
   return rects
 }
@@ -261,7 +275,7 @@ function masksForClosed(indexVariant, what) {
 function masksForOpen(indexVariant, what) {
   const rects = []
   const fromIndex = indexVariant.rects[what] ?? {}
-  if (fromIndex.documentName) rects.push(padRect(fromIndex.documentName, 8))
+  if (fromIndex.menuZone) rects.push(padRect(fromIndex.menuZone, 8))
   if (fromIndex.inspector) rects.push(fromIndex.inspector)
   if (fromIndex.controlCluster) rects.push(padRect(fromIndex.controlCluster, 8))
   return rects
