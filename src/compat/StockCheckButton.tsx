@@ -69,7 +69,20 @@ export function StockCheckButton() {
         Stock check
       </Button>
       <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetContent side="bottom" className="h-[85vh] max-w-none overflow-y-auto sm:max-w-none" data-testid="stock-check-sheet">
+        {/* WHY `data-[side=bottom]:h-[85vh]`, not a bare `h-[85vh]`: shadcn's own
+            SheetContent already carries `data-[side=bottom]:h-auto` — an
+            attribute+class selector, specificity (0,2,0) — which silently beats
+            a bare `.h-[85vh]` utility, specificity (0,1,0), regardless of which
+            comes later in the className string. The sheet grew to its full
+            content height (position: bottom-0, no top clamp) and rendered
+            bottom-anchored off the top of the viewport — every screenshot
+            showed only the last ~960px of the report. Matching the same
+            variant scope is what makes an explicit override actually override. */}
+        <SheetContent
+          side="bottom"
+          className="max-w-none overflow-y-auto data-[side=bottom]:h-[85vh] sm:max-w-none"
+          data-testid="stock-check-sheet"
+        >
           <SheetHeader>
             <SheetTitle>Stock tldraw compatibility</SheetTitle>
             <SheetDescription>
