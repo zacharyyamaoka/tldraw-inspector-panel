@@ -229,7 +229,11 @@ async function main() {
 }
 
 function img(rel, alt) {
-  return `<img src="media/inspector-variants/${rel}" alt="${alt}" loading="lazy">`
+  // WHY no `loading="lazy"`: a headless full-page capture (or a print) never
+  // scrolls, so a lazy image below the fold never triggers its own load at
+  // all — round-2 audit: "only the first four V1 tiles loaded." Every image
+  // here is already local and small; eager loading costs nothing real.
+  return `<img src="media/inspector-variants/${rel}" alt="${alt}">`
 }
 
 function variantSection(v, shots) {

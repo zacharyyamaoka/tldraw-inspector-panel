@@ -156,6 +156,31 @@ async function runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, vari
   const ids = await testIds(page)
   checklist.add(`${label}: rows present (W field, variant picker)`, ids.has('inspector-field-w') && ids.has(`inspector-variant-${variant}`))
 
+  // Zach's own audit, item 6 (spacing): open-pencil's own measured rhythm —
+  // caption→field 4px, field→next-caption 8px, field height 24, section
+  // header height 32 — read off the Position caption, the X field and the
+  // Dimensions caption, the exact three elements the audit named. This is
+  // the KIT's rhythm, not one variant's theme, so it runs for all three.
+  {
+    const rects = await evaluate(page, `JSON.stringify((() => {
+      const paragraphs = [...document.querySelectorAll('[data-testid="inspector-panel"] p')]
+      const position = paragraphs.find((p) => p.textContent === 'Position')?.getBoundingClientRect()
+      const dimensions = paragraphs.find((p) => p.textContent === 'Dimensions')?.getBoundingClientRect()
+      const field = document.querySelector('[data-testid="inspector-field-x"]').getBoundingClientRect()
+      const header = document.querySelector('[data-testid="inspector-group-layer"]').getBoundingClientRect()
+      return {
+        captionToField: position ? field.top - position.bottom : null,
+        fieldToNextCaption: dimensions ? dimensions.top - field.bottom : null,
+        fieldHeight: field.height,
+        headerHeight: header.height,
+      }
+    })())`).then(JSON.parse)
+    checklist.add(`${label}: caption→field gap <= 4px (${rects.captionToField})`, rects.captionToField !== null && rects.captionToField <= 4)
+    checklist.add(`${label}: field→next-caption gap <= 8px (${rects.fieldToNextCaption})`, rects.fieldToNextCaption !== null && rects.fieldToNextCaption <= 8)
+    checklist.add(`${label}: field height is 24px (${rects.fieldHeight})`, Math.abs(rects.fieldHeight - 24) < 0.5)
+    checklist.add(`${label}: section header height is 32px (${rects.headerHeight})`, Math.abs(rects.headerHeight - 32) < 0.5)
+  }
+
   // Mandatory #2: the WHOLE field scrubs, not just its glyph — drag starting
   // at the field's own centre, well clear of the leading glyph/prefix.
   {
@@ -250,6 +275,33 @@ async function runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, vari
       `${label}: nothing clips at ${Math.round(Number(width))}px width (${overflow.length === 0 ? 'none clipped' : overflow.map((r) => r.id).join(', ')})`,
       overflow.length === 0,
     )
+  }
+
+  // Round-2 audit, item 2: "a text segment never truncates" — at the 240px
+  // floor (still in effect from the block above), no segment item's TEXT
+  // may be visually clipped by an ellipsis. `scrollWidth > clientWidth` is
+  // the DOM's own honest signal for "this content doesn't fit its box",
+  // independent of whether the clipped content happens to still read as a
+  // real word.
+  {
+    const truncated = await evaluate(page, `JSON.stringify([...document.querySelectorAll('[data-testid^="inspector-segment-"]')]
+      .filter((el) => el.scrollWidth > el.clientWidth + 1)
+      .map((el) => el.dataset.testid))`).then(JSON.parse)
+    checklist.add(`${label}: no segment label truncates at 240px (${truncated.length === 0 ? 'none' : truncated.join(', ')})`, truncated.length === 0)
+  }
+
+  // Round-2 audit, item 3: every icon INSIDE a segment item stays within the
+  // stock-style-panel ratio (~18px, this app's own 22px-tall item) — the
+  // raw @tldraw/assets SVG carries its own 30px intrinsic size baked into
+  // the markup, which a wrapper class alone cannot override (fixed at the
+  // source in tldrawIcons.tsx); this asserts the fix actually reached the
+  // painted pixels, not just the wrapper's own CSS class.
+  {
+    const oversized = await evaluate(page, `JSON.stringify([...document.querySelectorAll('[data-testid^="inspector-segment-"] svg')]
+      .map((svg) => svg.getBoundingClientRect())
+      .filter((r) => r.width > 18.5 || r.height > 18.5)
+      .map((r) => ({ w: Math.round(r.width), h: Math.round(r.height) })))`).then(JSON.parse)
+    checklist.add(`${label}: every segment icon is <= 18px (${oversized.length === 0 ? 'none oversized' : JSON.stringify(oversized)})`, oversized.length === 0)
   }
   page.close()
 
