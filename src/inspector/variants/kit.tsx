@@ -341,6 +341,22 @@ export function ResizeHandle({ width, onWidth }: { width: number; onWidth(next: 
 			// only in that shared strip; it never needs to beat a popover.
 			className="absolute top-0 bottom-0 left-0 z-10 -ml-1 w-2 shrink-0 cursor-col-resize touch-none"
 			onPointerDown={(event) => {
+				// WHY `preventDefault()`: this `tabIndex={0}` div (Tab-navigable on
+				// purpose, for the ArrowLeft/ArrowRight resize below) otherwise
+				// takes DOM focus on the browser's own default mousedown behaviour
+				// — and `document.activeElement` landing inside `[data-testid=
+				// "inspector"]` is exactly what `Inspector.tsx`'s `InspectorPanel`
+				// reads to decide "something in the dock is mid-edit, don't resync
+				// the model to a new selection yet" (its own WHY there). A resize
+				// drag is never mid-edit of a FIELD, but the freeze can't tell the
+				// difference by DOM position alone — measured: select shape A,
+                // select shape B, drag this handle, select A again — the panel kept
+				// showing B's fields forever, because focus never left the handle
+				// to let the freeze release. Suppressing the default focus-on-
+				// mousedown here is what keeps a resize gesture from ever entering
+				// that state; Tab-then-arrow-keys is unaffected (keyboard focus
+				// navigation ignores a pointer event's preventDefault).
+				event.preventDefault()
 				event.currentTarget.setPointerCapture(event.pointerId)
 				dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width }
 				setActive(true)
