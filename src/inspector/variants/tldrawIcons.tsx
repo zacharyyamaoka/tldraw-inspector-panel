@@ -93,10 +93,26 @@ export const TLDRAW_ICONS: Record<string, Record<string, string>> = {
 }
 
 const CACHE = new Map<string, string>()
+/**
+ * WHY the root `<svg>`'s own `width="30" height="30"` attributes are
+ * stripped, not just recoloured: `@tldraw/assets` ships every icon at a
+ * fixed 30px intrinsic size baked into the markup itself — a wrapping
+ * `<span className="size-4">` sizes the SPAN, but an HTML `width`/`height`
+ * ATTRIBUTE on the injected `<svg>` wins over any CSS the span could apply,
+ * so every icon rendered at its native 30px regardless of the wrapper
+ * (round-2 audit: "Fill style and Size rung glyphs are clipped and
+ * oversized" in a 22px segment item). Replacing them with an inline
+ * `width:100%;height:100%` lets the svg fill whatever box its `<span>`
+ * wrapper is actually given.
+ */
 function recolored(svg: string): string {
 	const cached = CACHE.get(svg)
 	if (cached) return cached
-	const next = svg.replace(/fill="#000"/g, 'fill="currentColor"')
+	let next = svg.replace(/fill="#000"/g, 'fill="currentColor"')
+	next = next
+		.replace('<svg ', '<svg style="display:block;width:100%;height:100%" ')
+		.replace(/(<svg\b[^>]*?)\swidth="\d+"/, '$1')
+		.replace(/(<svg\b[^>]*?)\sheight="\d+"/, '$1')
 	CACHE.set(svg, next)
 	return next
 }

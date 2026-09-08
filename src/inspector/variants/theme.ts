@@ -49,7 +49,14 @@ export const VARIANTS: Record<VariantId, VariantTheme> = {
 		name: 'Verbatim',
 		tagline: "Open-pencil's own palette and geometry, ported literally.",
 		inlinePrefixes: false,
-		iconControlIds: new Set(['align', 'verticalAlign', 'textAlign']),
+		// `fill`/`dash` joined this set in round 2 of the audit: "a text
+		// segment never truncates" — their labels (six options, one of them
+		// "lined fill") never fit a 240px dock, so they draw tldraw's own
+		// stock icons (with a Tooltip carrying the label) the same way V2
+		// always has, rather than truncating text with an ellipsis. `size`
+		// (s/m/l/xl) and `font` (Draw/Sans/Serif/Mono) fit at 240px and stay
+		// text — the rule is about what fits, not a blanket icon-ification.
+		iconControlIds: new Set(['align', 'verticalAlign', 'textAlign', 'fill', 'dash']),
 		selectThreshold: Number.POSITIVE_INFINITY,
 	},
 	2: {

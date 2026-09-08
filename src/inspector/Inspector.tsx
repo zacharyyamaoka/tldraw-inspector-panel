@@ -45,7 +45,6 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Toggle } from '@/components/ui/toggle'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
 	Tooltip,
 	TooltipContent,
@@ -73,6 +72,8 @@ import {
 	CompactSelect,
 	IconButton,
 	ListRow,
+	fieldGroupLabelClass,
+	iconTileClass,
 	ResizeHandle,
 	SegmentedControl,
 	VariantPicker,
@@ -144,53 +145,45 @@ function SwatchGrid({ control, onChange }: { control: InspectorControl; onChange
 	)
 }
 
+/**
+ * WHY plain buttons + `iconTileClass`, not shadcn's `ToggleGroup`/`Toggle`
+ * (what this drew before round 2 of the audit): neither `toggleVariants`'
+ * "default" variant nor a bare `border-transparent` resets the browser's
+ * OWN default button chrome — this app deliberately ships no Tailwind
+ * preflight (app.css's own WHY), so every tile rendered as a visibly
+ * bordered/outset box regardless of the colour classes applied. `iconTileClass`
+ * (kit.tsx) carries the explicit `appearance-none border-0` reset open-
+ * pencil's own icon button never needed because its host DOES run preflight.
+ */
 function TileGroup({ control, onChange }: { control: InspectorControl; onChange(value: InspectorValue): void }) {
 	const current = typeof control.value === 'string' ? control.value : undefined
 	return (
 		<TooltipProvider>
-			<ToggleGroup
-				value={current ? [current] : []}
-				onValueChange={(next) => { if (next[0] !== undefined) onChange(next[0]) }}
-				className="flex-wrap"
-				aria-label={control.label}
-			>
+			<div className="flex flex-wrap gap-1" role="radiogroup" aria-label={control.label}>
 				{(control.options ?? []).map((option) => (
 					<Tooltip key={option.value}>
 						<TooltipTrigger
 							render={
-								<ToggleGroupItem
-									value={option.value}
+								<button
+									type="button"
+									role="radio"
+									aria-checked={option.value === current}
 									aria-label={option.label}
 									data-testid={`inspector-tile-${control.id}-${option.value}`}
-									size="sm"
-									// WHY `text-foreground` here rather than leaving the glyph to
-									// inherit it: a `<button>` does not inherit `color` from its
-									// DOM ancestor the way ordinary elements do (the UA stylesheet
-									// gives it its own `ButtonText` system colour), so the SVG's
-									// `fill-current`/`stroke-current` (Glyph, below) resolved to
-									// black regardless of theme until this was explicit — dark
-									// mode painted black glyphs on dark grey. No separate pressed
-									// colour: shadcn's own Toggle only changes the background
-									// (`data-[state=on]:bg-muted`) and leaves text colour alone, so
-									// matching that is "whatever the shadcn toggle already does"
-									// rather than a third scheme.
-									//
-									// WHY `size-6`, not the shadcn default: the variants brief
-									// names open-pencil's own geometry tile size by hand ("a grid
-									// of size-6 icon buttons") — one of the "large buttons" Zach's
-									// rejection named specifically.
-									className="size-6 p-0 text-foreground"
+									data-state={option.value === current ? 'on' : 'off'}
+									className={iconTileClass}
+									onClick={() => onChange(option.value)}
 								/>
 							}
 						>
 							{enumIcon(control.id, option.value)
-								? <TldrawIcon id={control.id} value={option.value} className="size-4" />
+								? <TldrawIcon id={control.id} value={option.value} className="size-4 shrink-0" />
 								: <Glyph name={option.value} path={option.path} viewBox={option.viewBox} />}
 						</TooltipTrigger>
 						<TooltipContent>{option.label}</TooltipContent>
 					</Tooltip>
 				))}
-			</ToggleGroup>
+			</div>
 		</TooltipProvider>
 	)
 }
@@ -214,7 +207,15 @@ function SegmentGroup({ control, onChange }: { control: InspectorControl; onChan
 		return {
 			value: option.value,
 			label: option.label,
-			icon: icon ? <TldrawIcon id={control.id} value={option.value} className="size-3.5" /> : undefined,
+			// WHY `size-4` exactly: the stock style panel draws its own icons at
+			// 18px inside a 40px button (a ~0.45 ratio); this segment item is
+			// 22px tall, so 16px (size-4) lands on the same ratio without
+			// spilling past the item's own edge — round-2 audit measured the
+			// previous `size-3.5` wrapper as clipped/oversized because the
+			// injected raw SVG carried its OWN `width="30" height="30"`
+			// attributes that a wrapper class alone cannot override (fixed at
+			// the source in tldrawIcons.tsx's `recolored`, not here).
+			icon: icon ? <TldrawIcon id={control.id} value={option.value} className="size-4 shrink-0" /> : undefined,
 		}
 	})
 	// V3 "Inline"'s own rule: an enum wider than the variant's threshold
@@ -368,6 +369,16 @@ function ColorRow({
 					max={100}
 					step={1}
 					unit="%"
+					// WHY 100, not left as ScrubNumber's own `min`-based default:
+					// an unset row falls back to `fallback ?? min ?? 0` — with no
+					// `fallback` this read "0 %" for an override that was never
+					// set at all, which paints as fully transparent even though
+					// the engine is actually painting a solid, opaque fill.
+					// 100 is what every unset colour row already assumes (no
+					// override reaches this except a genuine 0% commit), matching
+					// the same "show tldraw's own number, greyed" convention every
+					// other unset numeric row already follows.
+					fallback={100}
 					label={`${control.label} alpha`}
 					testId={`color-alpha-${control.id}`}
 					title="Alpha, read from this colour's own hex8 — the model still keeps one colour value, not a separate channel."
@@ -455,35 +466,57 @@ function ControlRow({
 	// prefix carries the same information the label did, at a fraction of
 	// the width, which is the whole point of a denser layout.
 	const hasInlinePrefix = V.inlinePrefixes && control.kind === 'number' && INLINE_PREFIXES[control.id] !== undefined
+	const labelTitle = control.source === 'style' ? 'tldraw style — inherited by the next shape drawn' : control.source === 'paint' ? 'display override — the record stays stock tldraw' : 'stock shape property, saved in the file'
+	const mixed = control.value === null && !control.unset
+		&& control.kind !== 'number' && control.kind !== 'text' && control.kind !== 'color'
+	const resetButton = control.overridden ? (
+		<button
+			type="button"
+			title={`Reset ${control.label} to tldraw's own value`}
+			aria-label={`Reset ${control.label}`}
+			data-testid={`inspector-clear-${control.id}`}
+			className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+			onClick={() => onClear(control.id)}
+		>
+			×
+		</button>
+	) : null
+	// WHY the label moves ABOVE the control for segments/tiles rather than
+	// staying in the shared `w-20` side column every other kind uses: a
+	// fixed 80px label column left as little as ~130px for a 6-item row at
+	// the 240px floor — barely enough for the ROW'S OWN 12px/item padding,
+	// let alone real content, which is what round 2's "no segment item may
+	// truncate" check caught (measured: even ICON-only fill items were 5px
+	// short of fitting). A caption row above, open-pencil's own convention
+	// for a field whose control needs its full width, gives every segmented/
+	// tile row the whole ~190px content width instead of the ~130px a
+	// beside-label layout could ever offer it.
+	if (control.kind === 'segments' || control.kind === 'tiles') {
+		return (
+			<div className="flex flex-col gap-1" data-control={control.id} data-source={control.source}>
+				<div className="flex items-center gap-1.5">
+					<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={labelTitle}>
+						{control.label}
+					</span>
+					{mixed ? <span className="shrink-0 text-[10px] text-muted-foreground">Mixed</span> : null}
+					{resetButton}
+				</div>
+				<Control control={control} onChange={onChange} onClear={onClear} />
+			</div>
+		)
+	}
 	return (
-		<div className="flex items-center gap-1.5" data-control={control.id} data-source={control.source}>
+		<div className="flex min-h-6 items-center gap-1.5" data-control={control.id} data-source={control.source}>
 			{control.paired || hasInlinePrefix ? null : (
-				<span
-					className="w-20 shrink-0 truncate text-xs text-muted-foreground"
-					title={control.source === 'style' ? 'tldraw style — inherited by the next shape drawn' : control.source === 'paint' ? 'display override — the record stays stock tldraw' : 'stock shape property, saved in the file'}
-				>
+				<span className="w-20 shrink-0 truncate text-xs text-muted-foreground" title={labelTitle}>
 					{control.label}
 				</span>
 			)}
 			<div className="min-w-0 flex-1">
 				<Control control={control} onChange={onChange} onClear={onClear} />
 			</div>
-			{control.value === null && !control.unset
-				&& control.kind !== 'number' && control.kind !== 'text' && control.kind !== 'color'
-				? <span className="shrink-0 text-[10px] text-muted-foreground">Mixed</span>
-				: null}
-			{control.overridden ? (
-				<button
-					type="button"
-					title={`Reset ${control.label} to tldraw's own value`}
-					aria-label={`Reset ${control.label}`}
-					data-testid={`inspector-clear-${control.id}`}
-					className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
-					onClick={() => onClear(control.id)}
-				>
-					×
-				</button>
-			) : null}
+			{mixed ? <span className="shrink-0 text-[10px] text-muted-foreground">Mixed</span> : null}
+			{resetButton}
 		</div>
 	)
 }
@@ -546,7 +579,16 @@ function GroupSection({
 							// the SAME element that carries the data attribute — moving it to
 							// an ancestor that never gets that attribute silently stops the
 							// chevron from ever rotating.
-							className="group flex w-full appearance-none items-center gap-1.5 border-0 bg-transparent px-3 py-2 text-left text-xs font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+							//
+							// WHY `justify-between` here (round 2 of the audit) rather than
+							// moving the chevron out of the trigger entirely: open-pencil's
+							// own header keeps the disclosure chevron at the RIGHT edge next
+							// to the actions column, not immediately after the title — but
+							// the chevron still has to stay a DOM descendant of this `group`-
+							// tagged button for its own rotation to work at all, so it moves
+							// to this button's own right edge (via `justify-between`) rather
+							// than a genuinely separate element in the sibling actions column.
+							className="group flex w-full appearance-none items-center justify-between border-0 bg-transparent px-3 py-2 text-left text-xs font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
 						/>
 					}
 				>
@@ -567,11 +609,25 @@ function GroupSection({
 					</IconButton>
 				) : <span className="mr-2" />}
 			</div>
-			<CollapsibleContent className="flex flex-col gap-2 px-3 pb-3">
+			{/* Zach's own audit, item 6, measured verbatim from open-pencil's
+			    PositionSection.vue/AppearanceSection.vue: caption→field is 4px
+			    (the caption's own `mb-1`, not a flex `gap` — a flex `gap` and a
+			    child's own margin-bottom STACK, they don't collapse, which is
+			    exactly what made this row rhythm ~64px instead of open-pencil's
+			    ~45 before this fix: a bare `<p>` with no reset carries the
+			    browser's OWN default block margin (`margin-block: 1em` at THIS
+			    element's own font-size), and this app runs no Tailwind preflight
+			    to zero it — the same class of bug the rest of this file already
+			    documents for `<button>`. `gap-0` here + `fieldGroupLabelClass`'s
+			    own explicit `mb-1` is what makes 4px the WHOLE gap rather than
+			    4px plus however tall an unreset `<p>`'s margin happens to be.
+			    Consecutive groups (PanelGrids) are `gap-1.5` (6px), open-pencil's
+			    own `mt-1.5`. */}
+			<CollapsibleContent className="flex flex-col gap-1.5 px-3 pb-3">
 				{captionBlocks(group.controls).map((block, index) => (
-					<div key={`${block.caption ?? 'block'}-${index}`} className="flex flex-col gap-1">
+					<div key={`${block.caption ?? 'block'}-${index}`} className="flex flex-col gap-0">
 						{block.caption ? (
-							<p className="text-[10px] text-muted-foreground">{block.caption}</p>
+							<p className={fieldGroupLabelClass}>{block.caption}</p>
 						) : null}
 						<div className={block.controls.every((control) => control.paired) ? 'grid grid-cols-2 gap-1.5' : 'flex flex-col gap-1.5'}>
 							{block.controls.map((control) => (

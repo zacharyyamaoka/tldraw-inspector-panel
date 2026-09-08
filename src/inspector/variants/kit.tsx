@@ -9,7 +9,7 @@
  * (see that file's own WHY) — every class string below reaches it through
  * `var(--v-*)`, never a literal hex, so re-theming stays a CSS-only edit.
  */
-import { useEffect, useId, useRef, useState } from 'react'
+import { cloneElement, useEffect, useId, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { cn } from 'cn'
 
@@ -25,6 +25,12 @@ import {
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 import {
 	DOCK_WIDTH_DEFAULT,
@@ -44,13 +50,37 @@ import {
  * resolves against THIS app's `--v-*` variant palette instead. Structure,
  * sizing and states are copied verbatim; only the colour source changed. */
 export const panelFieldBase =
-	'h-6 min-w-0 rounded border border-transparent bg-[var(--v-field)] text-[var(--v-surface)] outline-none ' +
+	'h-6 min-w-0 appearance-none rounded border-0 border border-transparent bg-[var(--v-field)] text-[var(--v-surface)] outline-none ' +
 	'hover:bg-[var(--v-field-hover)] focus-within:border-[var(--v-focus)] focus-within:bg-[var(--v-field-hover)] ' +
 	'disabled:opacity-50'
+// WHY `appearance-none border-0` ON TOP OF `border border-transparent`: this
+// app deliberately imports Tailwind WITHOUT preflight (app.css's own
+// top-of-file WHY), so a raw `<button>` keeps the browser's OWN default
+// border/background/padding until an author rule wins every property the UA
+// sheet sets — `border-transparent` alone only zeroes the COLOUR, not the
+// browser's own outset border-style, which is exactly what read as a visible
+// bordered box around every icon tile/segment (Zach's audit, round 2).
+// `appearance-none` strips the native button chrome; the explicit `border
+// border-transparent` that follows is what open-pencil's own `panelIconButtonBase`
+// specifies, now actually the ONLY border in play.
 export const panelIconButtonBase =
-	'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded border border-transparent bg-transparent ' +
-	'text-[var(--v-muted)] outline-none hover:bg-[var(--v-hover)] hover:text-[var(--v-surface)] ' +
+	'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded border-0 appearance-none bg-transparent ' +
+	'border border-transparent text-[var(--v-muted)] outline-none hover:bg-[var(--v-hover)] hover:text-[var(--v-surface)] ' +
 	'focus-visible:border-[var(--v-focus)]'
+/**
+ * The geometry/arrowhead tile grid's own button — borderless, like
+ * `panelIconButtonBase`, but ink stays the dock's own surface colour
+ * REGARDLESS of pressed state (every tile is a distinct symbol a person
+ * needs to read to pick the right one, unlike a segmented item's text where
+ * muted-until-selected carries real meaning) — only the BACKGROUND changes
+ * on selection, `data-[state=on]:bg-[var(--v-hover)]`, exactly what
+ * `TileGroup`'s own pre-audit `text-foreground` (always-on ink) already
+ * asserted; `tests/inspector_smoke.mjs`'s existing ink check depends on this.
+ */
+export const iconTileClass =
+	'flex size-6 shrink-0 appearance-none cursor-pointer items-center justify-center rounded border-0 border border-transparent bg-transparent ' +
+	'text-[var(--v-surface)] outline-none hover:bg-[var(--v-hover)] focus-visible:border-[var(--v-focus)] ' +
+	'data-[state=on]:bg-[var(--v-hover)]'
 export const segmentRootClass = 'inline-flex items-center gap-0.5 rounded bg-[var(--v-field)] p-0.5 hover:bg-[var(--v-field-hover)]'
 // WHY `whitespace-nowrap overflow-hidden text-ellipsis`: a row like Fill
 // style (6 options — none/semi/solid/pattern/fill/lined-fill) or Line style
@@ -62,15 +92,26 @@ export const segmentRootClass = 'inline-flex items-center gap-0.5 rounded bg-[va
 // `min-w-0` (segmented-control.ts) implies but this port had not yet made
 // explicit — a single line that shortens honestly instead of a silent
 // two-line garble.
+// `appearance-none border-0`: same reset as `panelIconButtonBase` above —
+// this is a raw `<button>` with no border of its own at all (open-pencil's
+// segmented item sits directly in the track, borderless; only the TRACK
+// draws a surface, via `segmentRootClass`'s `bg-[var(--v-field)]`).
 export const segmentItemClass =
-	'flex h-[22px] min-w-0 flex-1 cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-sm px-1.5 text-[11px] whitespace-nowrap ' +
+	'flex h-[22px] min-w-0 flex-1 appearance-none cursor-pointer items-center justify-center gap-1 overflow-hidden rounded-sm border-0 px-1.5 text-[11px] whitespace-nowrap ' +
 	'text-ellipsis text-[var(--v-muted)] outline-none hover:bg-[var(--v-hover)] hover:text-[var(--v-surface)] ' +
 	'focus-visible:ring-1 focus-visible:ring-[var(--v-focus)] ' +
 	'data-[state=on]:bg-[var(--v-hover)] data-[state=on]:text-[var(--v-surface)]'
 export const sectionRootClass = 'border-b border-[var(--v-border)] px-3 pb-3'
 export const sectionHeaderClass = 'grid h-8 min-w-0 items-center gap-1.5'
 export const sectionTitleClass = 'text-[11px] font-semibold text-[var(--v-surface)]'
-export const fieldGroupLabelClass = 'mb-1 block truncate text-[11px] leading-none text-[var(--v-muted)]'
+// WHY `mt-0` alongside `mb-1`: this class is used on a `<p>` in Inspector.tsx/
+// ThemePanel.tsx (captionBlocks' own caption) — `mb-1` only sets the BOTTOM
+// margin utility; a `<p>`'s UA default `margin-block-start` (~1em, computed
+// against ITS OWN font-size) is untouched by that alone, since this app runs
+// no Tailwind preflight to zero it globally. Left unset, it added an ~11px
+// gap ABOVE every caption that the round-2 audit's own math didn't predict —
+// found by measuring, not by reading the class list.
+export const fieldGroupLabelClass = 'mt-0 mb-1 block truncate text-[11px] leading-none text-[var(--v-muted)]'
 export const listRowClass = 'grid min-h-6 grid-cols-[1fr_auto] items-center gap-1.5 py-0.5'
 
 /* ------------------------------------------------------------ icon button */
@@ -205,25 +246,41 @@ export function SegmentedControl({
 	// style) shrinks its own labels instead of spilling onto a second line —
 	// one row, same height as every other segmented control, matching
 	// open-pencil's own single-row convention.
+	//
+	// WHY an icon item gets a real `<Tooltip>`, not just its `title=`
+	// attribute: an icon-only segment (Fill/Line style in V1, everything in
+	// V2 — round 2 of the audit: "a text segment never truncates") has no
+	// visible label at all, and a bare OS tooltip is slower and reads
+	// inconsistently with every other tooltip this dock already draws
+	// (TileGroup's geometry/arrowhead grid).
 	return (
-		<div role="radiogroup" aria-label={ariaLabel} className={cn(segmentRootClass, 'w-full')}>
-			{items.map((item) => (
-				<button
-					key={item.value}
-					type="button"
-					role="radio"
-					aria-checked={item.value === value}
-					aria-label={item.label}
-					title={item.label}
-					data-state={item.value === value ? 'on' : 'off'}
-					data-testid={`${testIdPrefix}-${item.value}`}
-					className={segmentItemClass}
-					onClick={() => onChange(item.value)}
-				>
-					{item.icon ?? item.label}
-				</button>
-			))}
-		</div>
+		<TooltipProvider>
+			<div role="radiogroup" aria-label={ariaLabel} className={cn(segmentRootClass, 'w-full')}>
+				{items.map((item) => {
+					const button = (
+						<button
+							type="button"
+							role="radio"
+							aria-checked={item.value === value}
+							aria-label={item.label}
+							data-state={item.value === value ? 'on' : 'off'}
+							data-testid={`${testIdPrefix}-${item.value}`}
+							className={segmentItemClass}
+							onClick={() => onChange(item.value)}
+						>
+							{item.icon ?? item.label}
+						</button>
+					)
+					if (!item.icon) return cloneElement(button, { key: item.value })
+					return (
+						<Tooltip key={item.value}>
+							<TooltipTrigger render={button} />
+							<TooltipContent>{item.label}</TooltipContent>
+						</Tooltip>
+					)
+				})}
+			</div>
+		</TooltipProvider>
 	)
 }
 
