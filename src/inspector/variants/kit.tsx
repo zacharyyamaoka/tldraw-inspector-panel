@@ -529,7 +529,11 @@ export function VariantPicker({ current, dockWidth }: { current: VariantId; dock
 			<select
 				aria-label="Inspector variant"
 				data-testid="inspector-variant-picker-compact"
-				className={cn(panelFieldBase, 'h-[22px] w-14 px-1 text-[11px]')}
+				// `w-28`, not `w-14`: a native <select> clips its closed label to the box
+				// with no ellipsis, so 56px cut "V7 — Figma exact" to "V7 — Fig" mid-word
+				// — the truthful-rendering rule applies to chrome too. The tab row has
+				// ~150px spare beside Inspect/Theme at this dock width.
+				className={cn(panelFieldBase, 'h-[22px] w-28 px-1 text-[11px]')}
 				value={current}
 				onChange={(event) => { window.location.href = variantUrl(Number(event.target.value) as VariantId) }}
 			>

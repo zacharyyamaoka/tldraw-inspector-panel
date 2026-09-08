@@ -850,7 +850,7 @@ function DrawerTab({
 							// Positioning is the CLUSTER's job now (`Inspector`'s own WHY) —
 							// this is an ordinary flex child, no `fixed`/`z-index`/coords of
 							// its own; the cluster wrapper already sits above the dock.
-							className={cn('pointer-events-auto flex h-6 w-6 shrink-0 items-center justify-center outline-none hover:bg-[var(--tl-color-hint)]', NATIVE_PANEL_CHROME)}
+							className={cn('pointer-events-auto flex h-6 w-6 shrink-0 items-center justify-center outline-none hover:bg-[var(--tl-color-hint)] [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:stroke-[1.5]', NATIVE_PANEL_CHROME)}
 							onPointerDown={(event) => {
 								event.currentTarget.setPointerCapture(event.pointerId)
 								dragRef.current = { pointerId: event.pointerId, startX: event.clientX, moved: false }
