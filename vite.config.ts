@@ -22,4 +22,15 @@ export default defineConfig({
     port: 5180,
     strictPort: true,
   },
+  build: {
+    rollupOptions: {
+      // WHY a second HTML entry: the pixel gate (tests/stock_pixels.mjs) needs a
+      // built, servable page that mounts the identical board with only tldraw's
+      // own CSS — see the WHY at the top of src/bare.tsx.
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        bare: fileURLToPath(new URL('./bare.html', import.meta.url)),
+      },
+    },
+  },
 })
