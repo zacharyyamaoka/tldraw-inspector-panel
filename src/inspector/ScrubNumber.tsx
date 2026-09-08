@@ -4,28 +4,41 @@
  * Ported LOGIC-verbatim from SystemSketch (77907974,
  * src/inspector/ScrubNumber.tsx) — the expression parser, `quantize`, the
  * `auto`-from-engine-value scrub origin, and the one-gesture-one-undo-step
- * `ENGINE_REASONS` gate are all unchanged. Only the skin moved: the donor's
- * own `.systemsketch-inspector__field` / `__scrub` / `__unit` CSS classes are
+ * gate are all unchanged. Only the skin moved: the donor's own
+ * `.systemsketch-inspector__field` / `__scrub` / `__unit` CSS classes are
  * replaced with Tailwind classes and shadcn's `InputGroup` (this lab's stack
  * has no `primitive-inspector.css` to inherit). `data-testid`s are unchanged
  * so the ported journey (`tests/inspector_smoke.mjs`) finds the same rows.
  *
  * The interaction Zach asked for by name — "the text boxes also act as
- * sliders". Three affordances in one 280px-friendly control, which is why the
- * panel has no sliders left at all: a track plus a value box costs twice the
- * width and reads worse. The glyph is the drag handle, never the text — Figma's
- * split, and the single detail that stops a scrub from eating a click meant to
- * place a caret.
+ * sliders" — and then, in the variants review, corrected: "the whole number
+ * field is the scrub surface, not just its glyph." What follows is the
+ * open-pencil contract measured verbatim from
+ * `packages/vue/src/primitives/NumberField/NumberFieldRoot.vue`'s own
+ * `startScrub`/`finish`: pointerdown on the root (never a `<button>`) begins
+ * a drag with `preventDefault()` + `setPointerCapture`; under a 2px
+ * threshold, releasing focuses and selects the input (`startEdit`) instead;
+ * past it, `document.body.style.cursor = 'ew-resize'` and the value tracks
+ * `dx * step * sensitivity` for the rest of the gesture.
  *
- * WHY this is Base UI's `NumberField` and not hand-rolled: `@base-ui/react`
- * (MIT) is headless — no stylesheet, no font stack, nothing to fight this
- * lab's token bridge with — and it already has the parts a hand-rolled version
- * gets subtly wrong: `value: number | null` as a real mixed/unset state,
- * `smallStep`/`largeStep` read live on both keyboard and scrub (alt/shift
- * change granularity mid-drag), `onValueCommitted` (fires on pointer-up after
- * a scrub and on blur after typing — the exact seam for "one gesture is one
- * undo step"), and Pointer Lock with a `teleportDistance` wrap released on
- * every cancel path.
+ * WHY Base UI's `NumberField.ScrubArea` is GONE, not just widened: it only
+ * wraps whatever child it's given — widening that child to the whole root
+ * would put the scrub surface and the `<input>`'s own native mousedown-to-
+ * caret behaviour on the exact same element, and ScrubArea's own pointer
+ * capture wins that race every time, so a plain click could never place a
+ * caret at all. Root-level handlers, hand-rolled below, are what let ONE
+ * element decide, per `pointerup`, whether the gesture was a drag or a
+ * click — exactly what NumberFieldRoot.vue's own `finish()` does. `min-w-0`
+ * fights the same overflow bug documented lower in this file either way.
+ *
+ * What Base UI still owns: `NumberField.Root`'s `value`/min/max/step state,
+ * and `NumberField.Input`'s keyboard handling (arrow-key stepping, alt/shift
+ * granularity via `smallStep`/`largeStep`) — only the POINTER gesture moved
+ * out from under it. `NumberField.Input`'s own click-to-focus is disarmed by
+ * this file's `onPointerDownCapture` below the same way the Vue root's own
+ * `@pointerdown="!editing && …"` guard disarms it, and re-armed automatically
+ * the moment the input is the active element — a click while already editing
+ * still places a caret exactly where clicked, unmediated.
  *
  * What stays this app's own: the expression parser
  * ({@link evaluateNumericExpression} — `100/2`, a relative `+6`) and the
@@ -45,6 +58,17 @@ import { cn } from 'cn'
 
 import { FIELD_GLYPHS } from './glyphs'
 
+/** open-pencil's own threshold (`Math.abs(moveEvent.clientX - startX) > 2`),
+ *  measured verbatim from NumberFieldRoot.vue's `startScrub`. */
+const SCRUB_THRESHOLD_PX = 2
+/** Screen pixels per one `step` unit of drag. Not part of the ported
+ *  contract (open-pencil's own `sensitivity` prop defaults to a raw
+ *  `dx * step`, i.e. 1px = 1 step for a step of 1 — too twitchy for this
+ *  app's canvas-coordinate fields) — kept at the speed the donor `ScrubArea`
+ *  this replaces already shipped (`pixelSensitivity={2}`), a taste call
+ *  documented here rather than silently changed. */
+const SCRUB_PIXELS_PER_STEP = 2
+
 export interface ScrubNumberProps {
 	value: number | null
 	/** True when no shape has an opinion yet: the field shows what tldraw is
@@ -56,6 +80,12 @@ export interface ScrubNumberProps {
 	unit?: string
 	/** Names a path in `FIELD_GLYPHS`. It is the drag handle. */
 	glyph?: string
+	/** V3 "Inline"'s own letter/symbol prefix (`X`, `°`, `%`, …), printed
+	 *  where `glyph`'s SVG would otherwise go — the caption row above the
+	 *  field it replaces (`Inspector.tsx`'s `variants/theme.ts` names which
+	 *  ids qualify). Takes over from `glyph` when both are given; the two
+	 *  variants that use `glyph` icons never set this. */
+	prefixText?: string
 	/** tldraw's own value, shown while the row is still `unset`. */
 	fallback?: number
 	label: string
@@ -155,8 +185,25 @@ export function quantize(value: number, step: number): number {
 	return Number(value.toFixed(Math.min(6, places)))
 }
 
-/** The gestures Base UI owns end to end; typing is committed by our parser. */
-const ENGINE_REASONS = new Set(['scrub', 'keyboard', 'wheel', 'increment-press', 'decrement-press'])
+/** The gestures Base UI still owns end to end (keyboard stepping); typing is
+ *  committed by our parser, and pointer-drag scrubbing is the hand-rolled
+ *  root handler below — see this file's header for why. */
+const ENGINE_REASONS = new Set(['keyboard', 'wheel', 'increment-press', 'decrement-press'])
+
+/** One root-level pointer gesture: undecided until it crosses the 2px
+ *  threshold, at which point it is a scrub for the rest of its life —
+ *  `NumberFieldRoot.vue`'s own `hasMoved` flag, named for what it tracks
+ *  rather than reusing "scrubbing" (this file's own `disabled`/`unset`
+ *  styling already uses that word for a different state). */
+interface DragGesture {
+	pointerId: number
+	startX: number
+	startValue: number
+	moved: boolean
+	/** True once the FIRST mutating `onChange` of this gesture has fired —
+	 *  what makes exactly one call in a multi-frame drag mark undo history. */
+	fired: boolean
+}
 
 export function ScrubNumber({
 	value,
@@ -166,6 +213,7 @@ export function ScrubNumber({
 	step = 1,
 	unit,
 	glyph,
+	prefixText,
 	fallback,
 	label,
 	testId,
@@ -173,10 +221,9 @@ export function ScrubNumber({
 	disabled,
 	onChange,
 }: ScrubNumberProps) {
-	// A scrub emits a value every couple of pixels of travel. The first marks
-	// history and the rest do not, so one drag is one Ctrl+Z.
-	const scrubbing = useRef(false)
 	const [draft, setDraft] = useState<string | null>(null)
+	const inputRef = useRef<HTMLInputElement | null>(null)
+	const dragRef = useRef<DragGesture | null>(null)
 
 	/**
 	 * What the field shows while nothing has been set: tldraw's own number.
@@ -200,6 +247,62 @@ export function ScrubNumber({
 		onChange(bounded, true)
 	}
 
+	/** open-pencil's `!editing` guard: once the input is actually focused, a
+	 *  pointerdown on it (or the row around it) is a normal text-selection
+	 *  drag or caret placement, not a new scrub gesture. */
+	const isEditing = () => typeof document !== 'undefined' && document.activeElement === inputRef.current
+
+	const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+		if (disabled || isEditing()) return
+		if ((event.target as HTMLElement).closest('button')) return
+		// Stops the native mousedown-to-focus/caret behaviour a bare `<input>`
+		// would otherwise run immediately — the whole reason a drag starting
+		// ON the input's own text doesn't just select that text. Restored by
+		// hand on release, in `startEdit` below, exactly like NumberFieldRoot.vue.
+		event.preventDefault()
+		event.currentTarget.setPointerCapture(event.pointerId)
+		dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startValue: shown ?? 0, moved: false, fired: false }
+	}
+
+	const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+		const drag = dragRef.current
+		if (!drag || drag.pointerId !== event.pointerId) return
+		const totalDx = event.clientX - drag.startX
+		if (!drag.moved) {
+			if (Math.abs(totalDx) <= SCRUB_THRESHOLD_PX) return
+			drag.moved = true
+			document.body.style.cursor = 'ew-resize'
+		}
+		// Figma's modifiers, same multipliers keyboard stepping already uses
+		// (`largeStep`/`smallStep` below): shift is coarse, alt is fine.
+		const effectiveStep = event.shiftKey ? step * 10 : event.altKey ? step / 10 : step
+		let next = quantize(drag.startValue + (totalDx / SCRUB_PIXELS_PER_STEP) * effectiveStep, step)
+		if (min !== undefined) next = Math.max(min, next)
+		if (max !== undefined) next = Math.min(max, next)
+		const gestureStart = !drag.fired
+		drag.fired = true
+		onChange(next, gestureStart)
+	}
+
+	const startEdit = () => {
+		const input = inputRef.current
+		if (!input) return
+		input.focus()
+		input.select()
+	}
+
+	const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+		const drag = dragRef.current
+		if (!drag || drag.pointerId !== event.pointerId) return
+		try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* already released */ }
+		document.body.style.cursor = ''
+		dragRef.current = null
+		// A click with no drag is open-pencil's `startEdit()` — never fired for
+		// a genuine scrub, which is what makes drag-and-release-off-the-field
+		// commit a value instead of also opening the caret underneath it.
+		if (!drag.moved) startEdit()
+	}
+
 	return (
 		<NumberField.Root
 			value={shown}
@@ -207,8 +310,8 @@ export function ScrubNumber({
 			max={max}
 			step={step}
 			disabled={disabled}
-			// Figma's multipliers. Base UI applies them to the scrub as well as to
-			// the arrow keys, and reads them live, so shift mid-drag goes coarse.
+			// Figma's multipliers. Base UI still applies them to the arrow keys
+			// (the one gesture it still owns end to end — see this file's header).
 			largeStep={step * 10}
 			smallStep={step / 10}
 			data-testid={`inspector-field-${testId}`}
@@ -216,35 +319,42 @@ export function ScrubNumber({
 			title={title}
 			onValueChange={(next, details) => {
 				if (next === null || !ENGINE_REASONS.has(details.reason)) return
-				const gestureStart = details.reason !== 'scrub' || !scrubbing.current
-				if (details.reason === 'scrub') scrubbing.current = true
-				onChange(quantize(next, step), gestureStart)
+				onChange(quantize(next, step), true)
 			}}
-			onValueCommitted={() => { scrubbing.current = false }}
 			render={
+				// WHY no `data-testid` here: `NumberField.Root`'s own prop above
+				// (`inspector-field-${testId}`) already lands on this exact DOM
+				// node once `render` swaps the tag — a second `data-testid` on the
+				// render element itself silently WINS that attribute (measured:
+				// the field-level id vanished from the DOM the moment both were
+				// set), so the field's identity stays on Root and the drag-handle
+				// id below lives on a child instead.
 				<InputGroup
-					className={cn('h-7', (unset || disabled) && 'opacity-60')}
+					className={cn('h-7 cursor-ew-resize', (unset || disabled) && 'opacity-60')}
 					data-unset={unset ? 'true' : undefined}
+					onPointerDown={handlePointerDown}
+					onPointerMove={handlePointerMove}
+					onPointerUp={endDrag}
+					onPointerCancel={endDrag}
 				/>
 			}
 		>
-			{glyph ? (
-				<InputGroupAddon>
-					<NumberField.ScrubArea
-						className="flex size-4 cursor-ew-resize items-center justify-center text-muted-foreground"
-						// Excalidraw calls the same constant `sensitivity`. 2px is Base
-						// UI's default and the value the hand-rolled predecessor settled on.
-						pixelSensitivity={2}
-						aria-label={`${label} scrubber`}
-						data-testid={`inspector-scrub-${testId}`}
-					>
-						<svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5 stroke-current fill-none stroke-[1.4]">
-							<path d={FIELD_GLYPHS[glyph] ?? FIELD_GLYPHS.position} />
-						</svg>
-					</NumberField.ScrubArea>
+			{prefixText ? (
+				<InputGroupAddon
+					data-testid={`inspector-scrub-${testId}`}
+					className="pointer-events-none w-4 shrink-0 justify-center select-none text-[11px] text-muted-foreground"
+				>
+					{prefixText}
+				</InputGroupAddon>
+			) : glyph ? (
+				<InputGroupAddon data-testid={`inspector-scrub-${testId}`} className="pointer-events-none select-none">
+					<svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5 stroke-current fill-none stroke-[1.4]">
+						<path d={FIELD_GLYPHS[glyph] ?? FIELD_GLYPHS.position} />
+					</svg>
 				</InputGroupAddon>
 			) : null}
 			<NumberField.Input
+				ref={inputRef}
 				aria-label={label}
 				data-testid={`inspector-number-${testId}`}
 				// WHY `min-w-0` is load-bearing, not decorative: a native `<input>`
@@ -257,7 +367,14 @@ export function ScrubNumber({
 				// it. shadcn's own `Input` sets this on every field for the same
 				// reason; this one is hand-styled (see the file header) so it needs
 				// its own copy.
-				className="h-7 min-w-0 flex-1 rounded-none border-0 bg-transparent px-1.5 text-sm outline-none"
+				//
+				// WHY `cursor-text` here specifically, against the `cursor-ew-resize`
+				// the whole row carries: once this element IS the active element
+				// (mid-edit), hovering it should read as a text field again, not a
+				// slider — `:focus` is the only state that needs the override since
+				// `isEditing()`/the pointerdown guard above already hand it native
+				// click/selection behaviour the instant it has focus.
+				className="h-7 min-w-0 flex-1 cursor-ew-resize rounded-none border-0 bg-transparent px-1.5 text-sm outline-none focus:cursor-text"
 				{...(draft === null ? {} : { value: draft })}
 				onChange={(event) => setDraft(event.target.value)}
 				onBlur={(event) => commitTyped(event.currentTarget.value)}
@@ -269,7 +386,7 @@ export function ScrubNumber({
 					commitTyped((event.currentTarget as HTMLInputElement).value)
 				}}
 			/>
-			{unit ? <InputGroupAddon align="inline-end">{unit}</InputGroupAddon> : null}
+			{unit ? <InputGroupAddon align="inline-end" className="pointer-events-none select-none">{unit}</InputGroupAddon> : null}
 		</NumberField.Root>
 	)
 }
