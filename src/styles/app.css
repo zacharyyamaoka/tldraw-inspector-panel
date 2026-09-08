@@ -219,7 +219,15 @@
    where shadcn only has one `accent`) — `--v-*` carries the full open-pencil
    naming so those parts don't have to invent their own aliases too. */
 [data-testid="inspector"][data-variant='1'],
-[data-testid="inspector"][data-variant='3'] {
+[data-testid="inspector"][data-variant='3'],
+/* Round 2 (V4/V5/V6, "Figma rows"/"Icon strips"/"Summary accordions"):
+   Zach's own brief — "Palette: V1's open-pencil palette (light+dark) for
+   all three — round two varies STRUCTURE, not colour." Same rule V3 already
+   established for round 1: a variant's own brief has to name a SECOND
+   palette before one gets invented; round 2's brief explicitly does not. */
+[data-testid="inspector"][data-variant='4'],
+[data-testid="inspector"][data-variant='5'],
+[data-testid="inspector"][data-variant='6'] {
   /* V1 "Verbatim" / V3 "Inline" share one literal palette — open-pencil's
      own light values (src/app.css in the measured clone). V3's brief only
      specifies a DENSER LAYOUT, never a second palette, so it inherits V1's
@@ -235,7 +243,13 @@
   --v-surface: #1f2328;
   --v-muted: #6b7280;
 }
-.tl-theme__dark :is([data-testid="inspector"][data-variant='1'], [data-testid="inspector"][data-variant='3']) {
+.tl-theme__dark :is(
+  [data-testid="inspector"][data-variant='1'],
+  [data-testid="inspector"][data-variant='3'],
+  [data-testid="inspector"][data-variant='4'],
+  [data-testid="inspector"][data-variant='5'],
+  [data-testid="inspector"][data-variant='6']
+) {
   --v-panel: #2a2a2a;
   --v-panel-secondary: #242424;
   --v-field: #383838;
