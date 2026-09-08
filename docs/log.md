@@ -75,6 +75,22 @@ the local `.bin/vite` directly — `npx`'s wrapper process didn't reliably
 forward `SIGKILL` to its child, leaving an orphaned server (and, once,
 a stdout pipe held open across the parent's exit).
 
+### A fourth fix: `npm run dev` crashed outright
+
+Not caught by `npm run check` (which never runs the dev server) — `npm run
+dev` itself failed on first real use. Vite 8's dependency pre-bundler
+(rolldown-based) cannot resolve the `?url`-suffixed imports inside
+`@tldraw/assets/imports.vite.js` (`import xJsonUrl from
+'./translations/x.json?url'` for every locale) even though the files are on
+disk — 53 `UNLOADABLE_DEPENDENCY` errors, dev server exits. `vite build`
+never hits this path (production bundling resolves the same imports
+correctly), which is why the pixel gate — which only ever runs `vite build`
+— didn't surface it. Fixed with `optimizeDeps.exclude: ['@tldraw/assets']`
+in `vite.config.ts`, tldraw's own documented workaround for self-hosted
+assets under Vite. Verified both by a plain `curl` 200 and a full headless
+CDP navigation to `?seed=stock` confirming `window.__lab.ready` on the dev
+server itself, not just the built app.
+
 ### Left for later milestones
 
 - The Figma-shaped inspector itself (M2+) — this milestone only proves the

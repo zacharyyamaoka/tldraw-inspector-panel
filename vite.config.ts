@@ -22,6 +22,16 @@ export default defineConfig({
     port: 5180,
     strictPort: true,
   },
+  optimizeDeps: {
+    // WHY: `npm run dev`'s dependency-prebundle scan cannot resolve the `?url`
+    // imports inside @tldraw/assets/imports.vite.js (every `import xJsonUrl from
+    // './translations/x.json?url'`) even though the files are on disk — it fails
+    // with 53 UNLOADABLE_DEPENDENCY errors and crashes the dev server outright.
+    // `vite build` (the pixel gate's own path) never hits this — the production
+    // bundler resolves the same imports fine. Excluding the package from
+    // pre-bundling is tldraw's own documented workaround for self-hosted assets.
+    exclude: ['@tldraw/assets'],
+  },
   build: {
     rollupOptions: {
       // WHY a second HTML entry: the pixel gate (tests/stock_pixels.mjs) needs a
