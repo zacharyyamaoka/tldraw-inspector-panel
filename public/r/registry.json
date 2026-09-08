@@ -26,20 +26,87 @@
         "scroll-area",
         "separator",
         "switch",
+        "tabs",
         "toggle",
         "toggle-group",
         "tooltip"
       ],
       "files": [
-        { "path": "src/inspector/inspectorModel.ts", "type": "registry:file", "target": "~/src/inspector/inspectorModel.ts" },
-        { "path": "src/inspector/overrides.ts", "type": "registry:file", "target": "~/src/inspector/overrides.ts" },
-        { "path": "src/inspector/glyphs.ts", "type": "registry:file", "target": "~/src/inspector/glyphs.ts" },
-        { "path": "src/inspector/configuredUtils.ts", "type": "registry:file", "target": "~/src/inspector/configuredUtils.ts" },
-        { "path": "src/inspector/ScrubNumber.tsx", "type": "registry:file", "target": "~/src/inspector/ScrubNumber.tsx" },
-        { "path": "src/inspector/Inspector.tsx", "type": "registry:file", "target": "~/src/inspector/Inspector.tsx" },
-        { "path": "src/inspector/inspectorModel.test.ts", "type": "registry:file", "target": "~/src/inspector/inspectorModel.test.ts" },
-        { "path": "src/inspector/overrides.test.ts", "type": "registry:file", "target": "~/src/inspector/overrides.test.ts" },
-        { "path": "src/inspector/ScrubNumber.test.ts", "type": "registry:file", "target": "~/src/inspector/ScrubNumber.test.ts" }
+        {
+          "path": "src/inspector/inspectorModel.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/inspectorModel.ts"
+        },
+        {
+          "path": "src/inspector/overrides.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/overrides.ts"
+        },
+        {
+          "path": "src/inspector/glyphs.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/glyphs.ts"
+        },
+        {
+          "path": "src/inspector/configuredUtils.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/configuredUtils.ts"
+        },
+        {
+          "path": "src/inspector/ScrubNumber.tsx",
+          "type": "registry:file",
+          "target": "~/src/inspector/ScrubNumber.tsx"
+        },
+        {
+          "path": "src/inspector/Inspector.tsx",
+          "type": "registry:file",
+          "target": "~/src/inspector/Inspector.tsx"
+        },
+        {
+          "path": "src/inspector/inspectorModel.test.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/inspectorModel.test.ts"
+        },
+        {
+          "path": "src/inspector/overrides.test.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/overrides.test.ts"
+        },
+        {
+          "path": "src/inspector/ScrubNumber.test.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/ScrubNumber.test.ts"
+        },
+        {
+          "path": "src/inspector/ThemePanel.tsx",
+          "type": "registry:file",
+          "target": "~/src/inspector/ThemePanel.tsx"
+        },
+        {
+          "path": "src/inspector/displayValueCensus.test.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/displayValueCensus.test.ts"
+        },
+        {
+          "path": "src/inspector/displayValueCensus.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/displayValueCensus.ts"
+        },
+        {
+          "path": "src/inspector/themeColorDerivation.test.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/themeColorDerivation.test.ts"
+        },
+        {
+          "path": "src/inspector/themeColorDerivation.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/themeColorDerivation.ts"
+        },
+        {
+          "path": "src/inspector/themeStorage.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/themeStorage.ts"
+        }
       ],
       "css": {
         "@custom-variant dark (&:is(.dark *, .tl-theme__dark *))": {},
