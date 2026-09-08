@@ -58,10 +58,36 @@ export function StockCheckReport({ result }: { result: StockCheckResult }) {
     )
   }
 
-  const wholeReading = readingFor(result.wholeBoard.diff.changed)
+  // WHY refusals force the whole-board reading red regardless of pixel count:
+  // a record stock tldraw would refuse outright is a harder failure than any
+  // amount of paint divergence — the two hidden mounts sharing this page's
+  // module graph can even render it identically (0 changed px) while a real,
+  // separate stock tldraw process would reject the file. See
+  // findStockEnumRefusals's own WHY in stockCheck.ts.
+  const wholeReading = result.refusals.length > 0
+    ? { tone: 'red' as const, label: 'stock tldraw would refuse part of this board' }
+    : readingFor(result.wholeBoard.diff.changed)
 
   return (
     <div className="flex flex-col gap-6" data-testid="stock-check-results">
+      {result.refusals.length > 0 && (
+        <section aria-label="Records stock tldraw would refuse" data-testid="stock-check-refusals" data-count={result.refusals.length}>
+          <div className="rounded-md border border-red-300 bg-red-50 p-3 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            <p className="font-semibold">
+              Stock tldraw would refuse {result.refusals.length} record{result.refusals.length === 1 ? '' : 's'}
+            </p>
+            <ul className="mt-2 list-disc pl-5 text-sm">
+              {result.refusals.map((row, index) => (
+                <li key={`${row.id}-${row.field}-${index}`} data-testid="stock-check-refusal-row" data-shape-id={row.id} data-field={row.field}>
+                  <span className="font-mono text-xs">{row.id}</span> ({row.type}): stock tldraw would refuse
+                  this record: {row.field} <code>'{row.value}'</code> is not a stock value
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
       <section aria-label="Whole board" data-testid="stock-check-whole-board" data-changed={result.wholeBoard.diff.changed}>
         <div className="mb-2 flex items-center gap-2">
           <h3 className="text-sm font-semibold">Whole board</h3>

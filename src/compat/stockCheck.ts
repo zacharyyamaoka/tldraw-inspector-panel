@@ -13,8 +13,11 @@ import {
   serializeTldrawJson,
   type Editor,
   type TldrawFileParseError,
+  type TLShapeId,
+  type TLStore,
 } from 'tldraw'
 import { mountHiddenStockEditor } from './hiddenStockMount'
+import { isStockColorValue, isStockGeoValue } from './stockEnums'
 
 // WHY 0.1: the same tolerance tests/stock_pixels.mjs's sibling M1 gate uses for
 // renders that ARE expected to be identical (there: threshold 0, byte-exact, a
@@ -51,11 +54,22 @@ export interface UnpairedShapeRow {
   side: 'lab-only' | 'stock-only'
 }
 
+export interface RefusalRow {
+  id: string
+  type: string
+  field: 'geo' | 'color' | 'labelColor'
+  value: string
+}
+
 export interface StockCheckOk {
   ok: true
   tldrJson: string
   labShapeUtilKeys: string[]
   stockShapeUtilKeys: string[]
+  /** Records the in-browser oracle CANNOT catch by parsing alone — see
+   * findStockEnumRefusals's own WHY. Non-empty means the board is refused by
+   * a real stock tldraw even though `parseTldrawJsonFile` said ok here. */
+  refusals: RefusalRow[]
   wholeBoard: {
     lab: ImageArtifact
     stock: ImageArtifact
@@ -89,6 +103,40 @@ function describeParseError(error: TldrawFileParseError): string {
     default:
       return 'stock tldraw refused this file for an unrecognized reason.'
   }
+}
+
+/**
+ * The one check the in-browser oracle cannot do by parsing alone.
+ *
+ * `parseTldrawJsonFile` validates `props.geo`/`props.color`/`props.labelColor`
+ * against `GeoShapeGeoStyle`/`DefaultColorStyle` — but those are mutable
+ * module-singleton arrays, and `src/inspector/configuredUtils.ts` (imported by
+ * `src/App.tsx`/`src/stock.tsx` before this ever runs) has already permanently
+ * appended `'systemsketch-rounded-rect'` to the geo enum FOR THIS ENTIRE PAGE.
+ * The hidden "stock" mount lives in the same JS realm, so its schema's
+ * validator sees the same mutated array and accepts a record a real, separate
+ * stock tldraw process would refuse outright. `stockEnums.ts` holds the real,
+ * static stock vocabularies (verified against a fresh, never-mutated import in
+ * `stockEnums.test.ts`) precisely so this check has ground truth this page's
+ * own singletons can no longer provide.
+ */
+function findStockEnumRefusals(store: TLStore): RefusalRow[] {
+  const refusals: RefusalRow[] = []
+  for (const record of store.allRecords()) {
+    if (record.typeName !== 'shape') continue
+    const shape = record as unknown as { id: string; type: string; props?: Record<string, unknown> }
+    const props = shape.props ?? {}
+    if (typeof props.geo === 'string' && !isStockGeoValue(props.geo)) {
+      refusals.push({ id: shape.id, type: shape.type, field: 'geo', value: props.geo })
+    }
+    if (typeof props.color === 'string' && !isStockColorValue(props.color)) {
+      refusals.push({ id: shape.id, type: shape.type, field: 'color', value: props.color })
+    }
+    if (typeof props.labelColor === 'string' && !isStockColorValue(props.labelColor)) {
+      refusals.push({ id: shape.id, type: shape.type, field: 'labelColor', value: props.labelColor })
+    }
+  }
+  return refusals
 }
 
 async function blobToImageData(blob: Blob): Promise<{ data: ImageData; url: string }> {
@@ -161,6 +209,28 @@ export async function runStockCheck(editor: Editor): Promise<StockCheckResult> {
     return { ok: false, reason: describeParseError(parsed.error), detail: parsed.error }
   }
 
+  // WHY before any image work: this is a static, synchronous read of the
+  // already-parsed records — no reason to pay for a hidden mount or a single
+  // toImage() call before knowing whether the board also fails a check the
+  // parse step itself cannot see. See findStockEnumRefusals's own WHY.
+  const refusals = findStockEnumRefusals(parsed.value)
+  const refusedIds = new Set(refusals.map((row) => row.id))
+
+  // WHY delete these records from the STORE before ever mounting the hidden
+  // editor, not merely skip them in a later toImage() call: tldraw computes
+  // shape geometry eagerly as ordinary editor bookkeeping (bounds, hit-testing
+  // caches) the instant a store containing ANY unrecognized custom geo type is
+  // mounted — GeoShapeUtil.getGeometry throws inside a reactive computed cache
+  // before onMount can ever fire, tldraw's own <Tldraw> error boundary catches
+  // it and retries the mount forever, and mountHiddenStockEditor's promise
+  // never resolves (found by a hung, not thrown, runStockCheck — see
+  // docs/log.md's M4 entry). Removing the records up front is also the more
+  // honest model: a real, separate stock tldraw process never rendered this
+  // shape either, because it never accepted the file to begin with.
+  if (refusedIds.size > 0) {
+    parsed.value.remove(Array.from(refusedIds) as TLShapeId[])
+  }
+
   const viewport = editor.getViewportScreenBounds()
   const hidden = await mountHiddenStockEditor(parsed.value, { w: viewport.w, h: viewport.h })
 
@@ -177,11 +247,17 @@ export async function runStockCheck(editor: Editor): Promise<StockCheckResult> {
     const stockShapeUtilKeys = Object.keys(hidden.editor.shapeUtils).sort()
 
     const labIds = new Set(editor.getCurrentPageShapeIds())
+    // WHY stockIds already excludes every refused id: the store never received
+    // those records (see the `.remove()` above), so `getCurrentPageShapeIds()`
+    // simply never lists them — no separate filtering needed below.
     const stockIds = new Set(hidden.editor.getCurrentPageShapeIds())
 
+    // A refused id belongs to its own section (above), not "unpaired" — it
+    // would otherwise show up here too, as a spurious lab-only entry, purely
+    // because it was deliberately removed from the stock side.
     const unpaired: UnpairedShapeRow[] = []
     for (const id of labIds) {
-      if (!stockIds.has(id)) unpaired.push({ id, type: editor.getShape(id)?.type ?? '?', side: 'lab-only' })
+      if (!stockIds.has(id) && !refusedIds.has(id)) unpaired.push({ id, type: editor.getShape(id)?.type ?? '?', side: 'lab-only' })
     }
     for (const id of stockIds) {
       if (!labIds.has(id)) unpaired.push({ id, type: hidden.editor.getShape(id)?.type ?? '?', side: 'stock-only' })
@@ -204,6 +280,7 @@ export async function runStockCheck(editor: Editor): Promise<StockCheckResult> {
     ])
     const wholeBoard = await diffImages(labWhole.blob, stockWhole.blob)
 
+    // WHY no separate refusedIds check here: stockIds already excludes them.
     const pairedIds = Array.from(labIds).filter((id) => stockIds.has(id))
     const shapes: ShapeRow[] = []
     for (const id of pairedIds) {
@@ -223,7 +300,10 @@ export async function runStockCheck(editor: Editor): Promise<StockCheckResult> {
     }
     shapes.sort((a, b) => b.diff.pct - a.diff.pct)
 
-    return { ok: true, tldrJson, labShapeUtilKeys, stockShapeUtilKeys, wholeBoard, shapes, unpaired, threshold: PIXELMATCH_THRESHOLD }
+    return {
+      ok: true, tldrJson, labShapeUtilKeys, stockShapeUtilKeys, refusals,
+      wholeBoard, shapes, unpaired, threshold: PIXELMATCH_THRESHOLD,
+    }
   } finally {
     hidden.dispose()
   }
