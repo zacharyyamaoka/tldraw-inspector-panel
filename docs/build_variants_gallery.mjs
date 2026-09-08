@@ -13,7 +13,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  delay, drag, elementBox, evaluate, freePort, launchChrome, openCdpPage, waitFor,
+  clickElement, delay, drag, elementBox, evaluate, freePort, launchChrome, openCdpPage, waitFor,
 } from '../tests/cdp_kit.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -31,6 +31,18 @@ const VARIANTS = [
   { id: 2, name: 'Canvas-native', tagline: "tldraw's own palette (--tl-color-* tokens) and icon set, identical geometry to Verbatim — the panel reads like tldraw drew it." },
   { id: 3, name: 'Inline', tagline: 'Letter-prefixed fields (X/Y/W/H/°/%), Selects for wide enums (font, fill, dash) — the densest of the three.' },
 ]
+
+// Round 2 (Zach's verdict on round 1: "very similar… aim for Figma's
+// compactness, measured in LINE COUNT per section"). Same open-pencil
+// palette as round 1's V1/V3 — round 2 varies STRUCTURE, not colour — but a
+// completely different component tree (`src/inspector/variants/figmaVariants.tsx`)
+// keyed on the Figma anatomy Zach specified element-by-element.
+const ROUND2_VARIANTS = [
+  { id: 4, name: 'Figma rows', tagline: 'The Figma anatomy as always-visible sections — one row per Figma line, nothing collapsed. Target: Position 3 / Appearance 1 / Geometry 1 / Fill 1 / Stroke 2 / Text 5 = 13.' },
+  { id: 5, name: 'Icon strips', tagline: 'Every section a single dense strip of icon buttons and mini fields — everything else behind a popover. Target: <= 8 lines total.' },
+  { id: 6, name: 'Summary accordions', tagline: 'Every section collapses to one summary line — a title and value chips — expanding on demand. Target: 6 lines closed.' },
+]
+const FIGMA_TARGET_TOTALS = { 4: 13, 5: 8, 6: 6 }
 
 function run(cmd, args, opts = {}) {
   return new Promise((doneRun, fail) => {
@@ -131,6 +143,8 @@ async function main() {
   const killPreview = () => preview.kill('SIGKILL')
 
   const shots = {} // variant -> { key: relative path }
+  const shots2 = {} // round-2 variant (4/5/6) -> { key: relative path }
+  const lineCounts = {} // round-2 variant -> { section: count }, measured pre-interaction
 
   try {
     await waitForServer(`http://127.0.0.1:${previewPort}/index.html`)
@@ -207,6 +221,65 @@ async function main() {
 
         page.close()
       }
+
+      /* --------------------------------------------------------- round two */
+      for (const { id: variant } of ROUND2_VARIANTS) {
+        shots2[variant] = {}
+        const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+        await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}` })
+        await waitFor(page, 'window.__lab && window.__lab.ready === true', `round2 variant ${variant} ready`, 20000)
+        await delay(400)
+
+        await selectShape(page, RECT_ID)
+        await captureDock(page, join(mediaDir, `v${variant}-light-rect-280.png`))
+        shots2[variant].lightRect280 = `v${variant}-light-rect-280.png`
+        // Measured BEFORE any interaction — V6's own "6 lines closed" target
+        // describes this exact fresh-selection state.
+        lineCounts[variant] = await evaluate(page, `JSON.stringify(Object.fromEntries(
+          [...document.querySelectorAll('[data-section]')].map((el) => [el.dataset.section, el.querySelectorAll(':scope [data-line]').length])
+        ))`).then(JSON.parse)
+
+        await selectShape(page, NOTE_ID)
+        await captureDock(page, join(mediaDir, `v${variant}-light-note-280.png`))
+        shots2[variant].lightNote280 = `v${variant}-light-note-280.png`
+
+        await setColorMode(page, 'dark')
+        await selectShape(page, RECT_ID)
+        await captureDock(page, join(mediaDir, `v${variant}-dark-rect-280.png`))
+        shots2[variant].darkRect280 = `v${variant}-dark-rect-280.png`
+        await selectShape(page, NOTE_ID)
+        await captureDock(page, join(mediaDir, `v${variant}-dark-note-280.png`))
+        shots2[variant].darkNote280 = `v${variant}-dark-note-280.png`
+        await setColorMode(page, 'light')
+        await selectShape(page, RECT_ID)
+        await delay(150)
+
+        if (variant === 4) {
+          // The picker popover open: Figma's own default-colour-strip +
+          // fill-style-icon-row anatomy, over the Fill line's swatch.
+          await evaluate(page, `document.querySelector('[data-testid="inspector-fillswatch"]')?.scrollIntoView({ block: 'center' })`)
+          await delay(100)
+          await clickElement(page, '[data-testid="inspector-fillswatch"]')
+          await delay(250)
+          const popoverShot = await page.send('Page.captureScreenshot', { format: 'png' })
+          await writeFile(join(mediaDir, 'v4-picker-popover-open.png'), Buffer.from(popoverShot.data, 'base64'))
+          shots2[4].pickerPopover = 'v4-picker-popover-open.png'
+          await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+          await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+          await delay(150)
+        }
+
+        if (variant === 6) {
+          // One section expanded — the accordion's own real interaction,
+          // never a hand-styled "what it would look like."
+          await clickElement(page, '[data-testid="inspector-accordion-fill"]')
+          await delay(200)
+          await captureDock(page, join(mediaDir, 'v6-section-expanded.png'))
+          shots2[6].sectionExpanded = 'v6-section-expanded.png'
+        }
+
+        page.close()
+      }
     } finally {
       session.kill()
     }
@@ -222,7 +295,7 @@ async function main() {
   const baselineDest = join(mediaDir, 'baseline-rejected-panel.png')
   await writeFile(baselineDest, await readFile(baselineSrc))
 
-  const html = buildHtml(shots)
+  const html = buildHtml(shots, shots2, lineCounts)
   await mkdir(dirname(reportPath), { recursive: true })
   await writeFile(reportPath, html)
   console.log(`[variants gallery] wrote ${reportPath}`)
@@ -256,8 +329,59 @@ function variantSection(v, shots) {
   </section>`
 }
 
-function buildHtml(shots) {
+/** V4/V5/V6's own section, plus whichever one-off capture that variant owns
+ *  (V4's picker popover, V6's one expanded accordion). */
+function round2Section(v, shots) {
+  const extra = v.id === 4
+    ? `<figure>${img(shots.pickerPopover, 'V4 colour picker popover open')}<figcaption>the colour picker popover — fill-style icon row, react-colorful square/hue/alpha, hex + alpha, "On this page" default swatches</figcaption></figure>`
+    : v.id === 6
+      ? `<figure>${img(shots.sectionExpanded, 'V6 Fill section expanded')}<figcaption>one accordion section (Fill) expanded — the summary chips stay visible above its own rows</figcaption></figure>`
+      : ''
+  return `
+  <section class="variant">
+    <h2>V${v.id} — ${v.name}</h2>
+    <p class="tagline">${v.tagline}</p>
+    <div class="row">
+      <figure>${img(shots.lightRect280, `V${v.id} light, rectangle, 280px`)}<figcaption>light · rectangle · 280px</figcaption></figure>
+      <figure>${img(shots.lightNote280, `V${v.id} light, note, 280px`)}<figcaption>light · note · 280px</figcaption></figure>
+      <figure>${img(shots.darkRect280, `V${v.id} dark, rectangle, 280px`)}<figcaption>dark · rectangle · 280px</figcaption></figure>
+      <figure>${img(shots.darkNote280, `V${v.id} dark, note, 280px`)}<figcaption>dark · note · 280px</figcaption></figure>
+    </div>
+    ${extra ? `<div class="row" style="grid-template-columns:1fr">${extra}</div>` : ''}
+  </section>`
+}
+
+/** The proof number the whole round exists to hit — measured (`data-line`
+ *  under `[data-section]`, same DOM hook `tests/inspector_smoke.mjs` reads)
+ *  beside Zach's own literal Figma line counts, not asserted equal by
+ *  construction: this table is what makes a mismatch visible on sight. */
+function lineCountTable(lineCounts) {
+  const sectionOrder = ['position', 'appearance', 'geometry', 'fill', 'stroke', 'text', 'appearance-geometry']
+  const rows = sectionOrder
+    .filter((section) => [4, 5, 6].some((v) => lineCounts[v]?.[section] !== undefined))
+    .map((section) => {
+      const cells = [4, 5, 6].map((v) => lineCounts[v]?.[section] ?? '—').join('</td><td>')
+      return `<tr><td>${section}</td><td>${cells}</td></tr>`
+    })
+    .join('\n')
+  const totals = [4, 5, 6].map((v) => Object.values(lineCounts[v] ?? {}).reduce((sum, n) => sum + n, 0))
+  return `
+  <section class="deviations">
+    <h2>Measured line counts vs. the Figma target</h2>
+    <table class="linecounts">
+      <thead><tr><th>section</th><th>V4 Figma rows</th><th>V5 Icon strips</th><th>V6 Summary accordions (closed)</th></tr></thead>
+      <tbody>
+        ${rows}
+        <tr class="total"><td>total</td><td>${totals[0]}</td><td>${totals[1]}</td><td>${totals[2]}</td></tr>
+        <tr class="target"><td>Zach's target</td><td>13 (Position 3 · Appearance 1 · Geometry 1 · Fill 1 · Stroke 2 · Text 5)</td><td>&lt;= 8</td><td>&lt;= 6</td></tr>
+      </tbody>
+    </table>
+  </section>`
+}
+
+function buildHtml(shots, shots2, lineCounts) {
   const sections = VARIANTS.map((v) => variantSection(v, shots[v.id])).join('\n')
+  const round2Sections = ROUND2_VARIANTS.map((v) => round2Section(v, shots2[v.id])).join('\n')
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -286,11 +410,16 @@ function buildHtml(shots) {
   .deviations h2 { margin-top: 0; }
   .deviations li { margin-bottom: 8px; }
   code { background: rgba(127,127,127,0.15); padding: 1px 5px; border-radius: 4px; }
+  .round2-lede { color: var(--muted); max-width: 760px; margin: 40px auto 0; padding: 0 24px; }
+  table.linecounts { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.linecounts th, table.linecounts td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  table.linecounts tr.total td { font-weight: 600; border-top: 2px solid var(--border); }
+  table.linecounts tr.target td { color: var(--muted); font-style: italic; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Inspector variants — three visual directions</h1>
+  <h1>Inspector variants — round one and round two</h1>
   <p class="lede">Zach rejected the shipped panel outright ("don't like these large buttons — more closely match the open pencil UX/UI"). These three variants share one skeleton (<code>src/inspector/variants/kit.tsx</code>) and two mandatory behaviours (drag-to-resize, whole-field scrub) and differ on theme + a few layout decisions. Full rationale and every deviation from the measured open-pencil reference: <code>docs/log.md</code>'s "Three inspector variants" entry. Screenshots below are from the real built app, driven headlessly — never a mock.</p>
 </header>
 <main>
@@ -303,14 +432,19 @@ function buildHtml(shots) {
   </section>
 ${sections}
   <section class="deviations">
-    <h2>Deliberately not built (this pass)</h2>
+    <h2>Deliberately not built (round 1)</h2>
     <ul>
       <li>A <code>+</code>/"add a fill" affordance open-pencil's own screenshots show — this app's fill/stroke are always-present StyleProps, never addable/removable, so the control would govern nothing real.</li>
-      <li>Per-row "eye" visibility toggles — no model-side "hide this style" concept exists to wire one to.</li>
+      <li>Per-row "eye" visibility toggles — no model-side "hide this style" concept existed to wire one to <em>at round 1</em>. Round 2 built one after all — see below — bound to the real <code>fill</code>/<code>dash</code> StyleProp's own <code>'none'</code> value, never a new concept.</li>
       <li><code>ThemePanel.tsx</code>'s own controls (the light/dark ToggleGroup, colour-section headers) rebuilt onto <code>kit.tsx</code>'s <code>SegmentedControl</code>/<code>Section</code> — its palette already re-themes automatically (same token cascade), the controls themselves were lower priority than the Inspect tab Zach actually named.</li>
       <li>The full shape × width × mode cross-product in this gallery — dark mode is shown at 280px only, not also at 240px, to keep the gallery to a legible size; the 240px no-clip guarantee itself is proven for every combination by <code>tests/inspector_smoke.mjs</code>, not by this gallery.</li>
     </ul>
   </section>
+
+  <h1 class="round2-lede" style="font-size:20px;margin-top:48px;">Round two — "aim for Figma's compactness, measured in line count per section"</h1>
+  <p class="round2-lede">Zach's verdict on round 1: "generally I want the inspector panel to be more compact… Aim to match the compactness of figma. Please make your 3 variants more orthogonal — the 3 you made last time were very similar." V4/V5/V6 read the same open-pencil palette as V1/V3 (round two varies STRUCTURE, not colour) but render through a completely different component tree keyed on the exact Figma anatomy Zach specified — <code>src/inspector/variants/figmaVariants.tsx</code>. Full mapping table and every deviation: <code>docs/log.md</code>'s round-2 entry.</p>
+${round2Sections}
+${lineCountTable(lineCounts)}
 </main>
 </body>
 </html>`
