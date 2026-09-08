@@ -10,8 +10,19 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Board } from './board/mount'
 
+// WHY this switch lives on bare.tsx itself rather than inside Board: `?seed=`
+// already reads once at module scope in mount.tsx because both entries share
+// it identically, but `?inspector=1` is bare-only — index.html (the chrome
+// entry) always mounts the Inspector, no switch needed. This is the "stock
+// route": the Inspector on a canvas with NONE of `CONFIGURED_SHAPE_UTILS`
+// registered, so every `paint` row it draws must withhold itself
+// (`paintReaches(shape, editor)` false in inspectorModel.ts) instead of
+// writing `meta` that changes no pixel — the dishonest-control failure the
+// route exists to disprove. See docs/log.md's M2 entry.
+const inspectorMode = new URLSearchParams(window.location.search).get('inspector') === '1'
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Board />
+    <Board withInspector={inspectorMode} />
   </StrictMode>,
 )

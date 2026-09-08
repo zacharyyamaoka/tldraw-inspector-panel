@@ -1,6 +1,8 @@
 import { getAssetUrlsByImport } from '@tldraw/assets/imports.vite'
 import { useCallback } from 'react'
 import { Tldraw, type Editor } from 'tldraw'
+import { CONFIGURED_SHAPE_UTILS } from '../inspector/configuredUtils'
+import { Inspector } from '../inspector/Inspector'
 import { seedStockBoard } from './seed'
 
 // WHY self-hosted assets (@tldraw/assets/imports.vite) rather than tldraw's default
@@ -24,6 +26,27 @@ function readSeedMode(): string | null {
   return new URLSearchParams(window.location.search).get('seed')
 }
 
+export interface BoardProps {
+  /**
+   * Mount the Figma-shaped `Inspector` (src/inspector/Inspector.tsx) in place
+   * of tldraw's own `DefaultStylePanel`, through the stock `components={{
+   * StylePanel }}` seam. `false` (the default, and always `bare.html`'s
+   * plain-load value) keeps `DefaultStylePanel` — the pixel gate's control.
+   */
+  withInspector?: boolean
+  /**
+   * Register `CONFIGURED_SHAPE_UTILS` (the paint seam + rounded rect,
+   * src/inspector/configuredUtils.ts) instead of tldraw's own defaults.
+   *
+   * WHY this can be `false` while `withInspector` is `true`: that combination
+   * is `bare.html?inspector=1`, the "stock route" whose whole point is
+   * showing the Inspector's `paint` rows withhold themselves
+   * (`paintReaches` false) when the seam that would resolve them into real
+   * pixels was never installed — see docs/log.md's M2 entry.
+   */
+  withConfiguredUtils?: boolean
+}
+
 /**
  * The one `<Tldraw>` mount shared by src/App.tsx (chrome entry) and src/bare.tsx
  * (the pixel gate's control entry) — see the WHY in bare.tsx for why a second entry
@@ -31,7 +54,7 @@ function readSeedMode(): string | null {
  * is what makes "byte-identical boards, different CSS stacks" a fact instead of a
  * convention someone can drift away from.
  */
-export function Board() {
+export function Board({ withInspector = false, withConfiguredUtils = false }: BoardProps = {}) {
   const seedMode = readSeedMode()
 
   const handleMount = useCallback(
@@ -56,6 +79,8 @@ export function Board() {
         // so Zach's own board on this port survives reloads.
         persistenceKey={seedMode ? undefined : 'tldraw_styling_lab'}
         onMount={handleMount}
+        shapeUtils={withConfiguredUtils ? CONFIGURED_SHAPE_UTILS : undefined}
+        components={withInspector ? { StylePanel: Inspector } : undefined}
       />
     </div>
   )

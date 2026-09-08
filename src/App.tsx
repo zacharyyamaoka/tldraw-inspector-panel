@@ -10,6 +10,10 @@ if (new URLSearchParams(window.location.search).get('preflight') === '1') {
   void import('tailwindcss/preflight.css')
 }
 
+// WHY the chrome entry always mounts the Inspector and the configured utils,
+// with no query switch of its own: this is the real app, and the whole point
+// of M2 is that its right dock IS the Figma-shaped inspector, not tldraw's
+// own style panel — see docs/log.md's M2 entry.
 export default function App() {
-  return <Board />
+  return <Board withInspector withConfiguredUtils />
 }

@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test:unit": "vitest run",
     "test:pixels": "node tests/stock_pixels.mjs",
-    "check": "tsc -b && vitest run && node tests/stock_pixels.mjs"
+    "test:inspector": "node tests/inspector_smoke.mjs",
+    "check": "tsc -b && vitest run && node tests/stock_pixels.mjs && node tests/inspector_smoke.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
@@ -21,6 +22,7 @@
     "cn": "^0.2.6",
     "lucide-react": "^1.42.0",
     "react": "^19.2.8",
+    "react-colorful": "^5.6.1",
     "react-dom": "^19.2.8",
     "shadcn": "^4.21.0",
     "tailwindcss": "4.3.3",

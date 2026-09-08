@@ -12,7 +12,16 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
-@custom-variant dark (&:is(.dark *));
+/* WHY `.tl-theme__dark` joins `.dark` here rather than getting its own rule:
+   tldraw flips `.tl-theme__dark` on `.tl-container` itself when a person (or
+   `editor.user.updateUserPreferences({ colorScheme: 'dark' })`) switches
+   themes — it never touches `.dark`, which is shadcn's own convention and
+   nothing here sets. Inspector.tsx's shadcn parts use `dark:` classes
+   (Switch, Toggle, ToggleGroup, Popover…), and the `.tl-container` bridge
+   above already flips the *values* those classes' tokens resolve to; without
+   this the `dark:` variant itself would just never match, so the classes
+   would still resolve to their light-mode token values inside a dark canvas. */
+@custom-variant dark (&:is(.dark *, .tl-theme__dark *));
 
 @theme inline {
     --font-heading: var(--font-sans);
