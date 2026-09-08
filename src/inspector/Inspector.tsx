@@ -18,13 +18,14 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import {
+	DefaultStylePanel,
 	useEditor,
 	usePassThroughWheelEvents,
 	useValue,
 	type Editor,
 	type TLUiStylePanelProps,
 } from 'tldraw'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, SlidersHorizontal } from 'lucide-react'
 import { HexAlphaColorPicker } from 'react-colorful'
 
 import { Button } from '@/components/ui/button'
@@ -85,6 +86,7 @@ import {
 } from './variants/kit'
 import { getVariant, INLINE_PREFIXES, isFigmaAnatomyVariant, VARIANTS } from './variants/theme'
 import { TLDRAW_ICONS, TldrawIcon } from './variants/tldrawIcons'
+import { readPanelMode, writePanelMode, type PanelMode } from './variants/panelMode'
 
 /** Read once at startup, same rule as `readSeedMode`/`getVariant` itself —
  *  see `variants/theme.ts`'s own WHY. */
@@ -790,6 +792,77 @@ function InspectorPanel({ editor }: { editor: Editor }) {
 }
 
 /**
+ * Coordinator add-on to the round-2 brief, mid-task: "a button at the top of
+ * the dock that switches back to tldraw's STOCK style panel for editing
+ * primitives, and, while the stock panel is showing, a small button that
+ * switches back to the inspector… this is exactly what the lab is for."
+ *
+ * `DefaultStylePanel` is rendered completely unmediated — no wrapper div of
+ * this file's own around it — so tldraw's own `Layout` wraps it in the
+ * identical `.tlui-style-panel__wrapper` a true stock deployment would,
+ * which is the whole proof `tests/stock_pixels.mjs`'s new
+ * `?seed=stock&panel=stock` gate run needs: pixel-identical to bare's own
+ * panel, not a copy.
+ *
+ * WHY the "Inspector" pill only renders once a shape is actually selected:
+ * the pixel gate's new run compares the EMPTY board (no shape selected,
+ * `readDockRects`'s own convention — `.tlui-style-panel__wrapper` never
+ * renders one either) with NO mask at all. A pill that showed regardless of
+ * selection would paint pixels bare.html never does, on exactly the frame
+ * that gate has no rect to zero.
+ *
+ * WHY `position: fixed`, measured off `getBoundingClientRect()`, rather than
+ * `position: absolute` inside a positioned ancestor: `board/mount.tsx`'s own
+ * `<div style={{ position: 'fixed', inset: 0 }}>` already makes `.tl-container`
+ * fill the viewport, so a fixed-position pill anchored to the panel's own
+ * measured bottom edge reads identically to "absolute, inside `.tl-container`"
+ * without this file needing to establish (or verify) a containing block on
+ * an ancestor it does not own.
+ */
+function StockPanelView(props: TLUiStylePanelProps & { onSwitchToInspector(): void }) {
+	const editor = useEditor()
+	const hasSelection = useValue('stock panel has selection', () => editor.getSelectedShapeIds().length > 0, [editor])
+	const [pillTop, setPillTop] = useState<number | null>(null)
+
+	useEffect(() => {
+		if (!hasSelection) { setPillTop(null); return }
+		let frame = 0
+		const measure = () => {
+			const panel = document.querySelector('.tlui-style-panel__wrapper')
+			if (!panel) return
+			setPillTop(panel.getBoundingClientRect().bottom + 8)
+		}
+		measure()
+		const observer = new ResizeObserver(() => { frame = requestAnimationFrame(measure) })
+		const panel = document.querySelector('.tlui-style-panel__wrapper')
+		if (panel) observer.observe(panel)
+		window.addEventListener('resize', measure)
+		return () => {
+			cancelAnimationFrame(frame)
+			observer.disconnect()
+			window.removeEventListener('resize', measure)
+		}
+	}, [hasSelection])
+
+	return (
+		<>
+			<DefaultStylePanel {...props} />
+			{hasSelection && pillTop !== null ? (
+				<button
+					type="button"
+					data-testid="inspector-switch-to-inspector"
+					className="pointer-events-auto fixed right-2 z-[var(--tl-layer-panels)] flex h-[22px] items-center rounded-full border border-[var(--tl-color-panel-contrast)] bg-[var(--tl-color-panel)] px-2.5 text-[11px] font-medium text-[var(--tl-color-text)] shadow-[var(--tl-shadow-2)] outline-none hover:bg-[var(--tl-color-hint)]"
+					style={{ top: pillTop }}
+					onClick={props.onSwitchToInspector}
+				>
+					Inspector
+				</button>
+			) : null}
+		</>
+	)
+}
+
+/**
  * The dock: an overlay INSIDE `.tl-container`, never a flex sibling.
  *
  * WHY absolute, not a layout sibling that shrinks the canvas: a sibling panel
@@ -799,10 +872,19 @@ function InspectorPanel({ editor }: { editor: Editor }) {
  * where `bare.html` puts it; the pixel gate then only has to mask the dock's
  * own rect, not re-derive a moved viewport.
  */
-export function Inspector({ isMobile: _isMobile, styles: _styles, children: _children }: TLUiStylePanelProps) {
+export function Inspector(props: TLUiStylePanelProps) {
 	const editor = useEditor()
 	const ref = useRef<HTMLDivElement>(null)
 	usePassThroughWheelEvents(ref)
+	// Coordinator add-on: which panel is showing — read once at startup
+	// (`readPanelMode`'s own WHY mirrors `getVariant`/`useDockWidth`), flipped
+	// by either button below, persisted on flip (skipped under `?seed=` with
+	// no `panel=` of its own — the same rule dock width follows).
+	const [mode, setMode] = useState<PanelMode>(readPanelMode)
+	const flipMode = (next: PanelMode) => {
+		setMode(next)
+		writePanelMode(next)
+	}
 	// Mandatory behaviour #1 (the variants brief): drag-to-resize, clamped,
 	// persisted (skipped on a `?seed=` run — see `useDockWidth`'s own WHY),
 	// reset on double-click. `ResizeHandle` computes the delta; this is just
@@ -838,6 +920,19 @@ export function Inspector({ isMobile: _isMobile, styles: _styles, children: _chi
 			element.removeEventListener('keydown', handleKeyDown, { capture: true })
 		}
 	}, [editor])
+
+	// Coordinator add-on: stock mode renders tldraw's OWN style panel, in its
+	// own normal-flow slot — never inside this file's own `ref`-tracked,
+	// `position: absolute` dock div below, which exists for the Figma-shaped
+	// panel alone. `usePassThroughWheelEvents`/the pointermove-and-Escape
+	// effect above are dock-specific behaviours `DefaultStylePanel` already
+	// carries its own copies of (see this file's header, "Ported behaviour,
+	// not ported file") — they would be redundant, not harmful, applied here,
+	// but the early return keeps the two modes from sharing a ref neither
+	// fully needs.
+	if (mode === 'stock') {
+		return <StockPanelView {...props} onSwitchToInspector={() => flipMode('inspector')} />
+	}
 
 	return (
 		<div
@@ -898,7 +993,27 @@ export function Inspector({ isMobile: _isMobile, styles: _styles, children: _chi
 					{/* Live variant flip on port 5180 — the review this is FOR. See
 					    kit.tsx's `VariantPicker` for why it reloads rather than
 					    re-theming in place. */}
-					<VariantPicker current={VARIANT} />
+					<div className="flex items-center gap-1.5">
+						<VariantPicker current={VARIANT} />
+						<TooltipProvider>
+							<Tooltip>
+								<TooltipTrigger
+									render={
+										<button
+											type="button"
+											data-testid="inspector-switch-to-stock"
+											aria-label="Switch to tldraw's stock style panel"
+											className={iconTileClass}
+											onClick={() => flipMode('stock')}
+										/>
+									}
+								>
+									<SlidersHorizontal className="size-3.5" />
+								</TooltipTrigger>
+								<TooltipContent>Stock panel</TooltipContent>
+							</Tooltip>
+						</TooltipProvider>
+					</div>
 				</TabsList>
 				<TabsContent value="inspect" className="min-h-0 flex-1">
 					<InspectorPanel editor={editor} />
