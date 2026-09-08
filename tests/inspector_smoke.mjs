@@ -345,6 +345,342 @@ async function runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, vari
   }
 }
 
+/* --------------------------------------------------- round 2: 4/5/6 -----
+ * V4 "Figma rows", V5 "Icon strips", V6 "Summary accordions" — Zach's
+ * verdict on round 1 ("very similar… aim for Figma's compactness, measured
+ * in LINE COUNT per section"). A deliberately separate function from
+ * `runMandatoryBehaviourChecks` above: round 1's caption-rhythm assertions
+ * read `<p>` elements with literal "Position"/"Dimensions" text that the
+ * Figma anatomy's own `AnatomySection` never renders (a plain section
+ * title, no per-caption paragraph) — reusing that function wholesale would
+ * assert something round 2 was never asked to reproduce. What genuinely IS
+ * shared (whole-field scrub, resize/reload, ink) is re-asserted here at
+ * round 2's own testids, never imported from round 1's function.
+ */
+
+/** `data-section` -> its own `[data-line]` count, read in whatever
+ *  open/closed state the DOM is in right now — V4/V5 are always fully
+ *  drawn; V6 must be read BEFORE any accordion header is clicked to see the
+ *  "6 lines closed" default the brief's own target describes. */
+async function sectionLineCounts(page) {
+  return evaluate(page, `JSON.stringify(Object.fromEntries(
+    [...document.querySelectorAll('[data-section]')].map((el) => [el.dataset.section, el.querySelectorAll(':scope [data-line]').length])
+  ))`).then(JSON.parse)
+}
+
+/** Open a Base UI `Select` (kit.tsx's `CompactSelect`) and click one of its
+ *  portaled items by the item's own `data-testid`. */
+async function selectItem(page, triggerTestId, itemTestId) {
+  await reveal(page, `[data-testid="${triggerTestId}"]`)
+  await clickElement(page, `[data-testid="${triggerTestId}"]`)
+  await delay(150)
+  await reveal(page, `[data-testid="${itemTestId}"]`)
+  await clickElement(page, `[data-testid="${itemTestId}"]`)
+  await delay(150)
+}
+
+const FIGMA_LINE_TARGETS = {
+  4: { position: 3, appearance: 1, geometry: 1, fill: 1, stroke: 2, text: 5 },
+}
+
+async function runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant) {
+  const label = `variant ${variant}`
+  const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}` })
+  await waitFor(page, 'window.__lab && window.__lab.ready === true', `${label} ready`, 20000)
+  await delay(500)
+  await selectShape(page, RECT_ID)
+  await delay(200)
+
+  /* ---------------------------------------------------------- line counts */
+  {
+    const counts = await sectionLineCounts(page)
+    if (variant === 4) {
+      const targets = FIGMA_LINE_TARGETS[4]
+      for (const [section, target] of Object.entries(targets)) {
+        checklist.add(`${label}: [data-section="${section}"] has <= ${target} lines (${counts[section] ?? 0})`, (counts[section] ?? 0) <= target)
+      }
+      const total = Object.values(counts).reduce((sum, n) => sum + n, 0)
+      checklist.add(`${label}: total lines is exactly 13 on a stock rectangle (${total})`, total === 13)
+    } else if (variant === 5) {
+      const total = Object.values(counts).reduce((sum, n) => sum + n, 0)
+      checklist.add(`${label}: total lines <= 8 (${total})`, total <= 8)
+    } else if (variant === 6) {
+      const total = Object.values(counts).reduce((sum, n) => sum + n, 0)
+      checklist.add(`${label}: total lines closed <= 6 (${total})`, total <= 6)
+    }
+  }
+
+  // V6 draws every row inside a closed accordion by default (that IS the
+  // "6 lines closed" state just measured above) — every check from here on
+  // needs real fields in the DOM, so "Expand all" opens every section at
+  // once rather than clicking each header the checks below happen to need.
+  if (variant === 6) {
+    await clickElement(page, '[data-testid="inspector-accordion-openall"]')
+    await delay(200)
+  }
+
+  /* --------------------------------------------- whole-field scrub / edit */
+  {
+    const before = await getShape(page, RECT_ID)
+    const box = await reveal(page, '[data-testid="inspector-field-w"]')
+    await drag(page, { x: box.cx, y: box.cy }, { x: box.cx + 60, y: box.cy })
+    await delay(150)
+    const after = await getShape(page, RECT_ID)
+    checklist.add(`${label}: dragging the MIDDLE of the W field scrubs it`, after.props.w !== before.props.w)
+    await evaluate(page, 'void window.__lab.editor.undo()')
+    await delay(150)
+  }
+  {
+    await evaluate(page, 'document.activeElement && document.activeElement.blur()')
+    await delay(80)
+    await clickElement(page, '[data-testid="inspector-field-x"]')
+    await delay(150)
+    const active = await evaluate(page, `document.activeElement && document.activeElement.dataset && document.activeElement.dataset.testid`)
+    checklist.add(`${label}: click without drag puts the caret in the input (active: ${active})`, active === 'inspector-number-x')
+    await evaluate(page, 'document.activeElement && document.activeElement.blur()')
+    await delay(80)
+  }
+
+  /* ------------------------------------------------------------------ ink */
+  {
+    const r = await evaluate(page, `JSON.stringify((() => {
+      const dockEl = document.querySelector('[data-testid="inspector"]')
+      function probe(cssVar) {
+        const el = document.createElement('span')
+        el.style.color = cssVar
+        dockEl.appendChild(el)
+        const value = getComputedStyle(el).color
+        el.remove()
+        return value
+      }
+      const unpressedSegment = document.querySelector('[data-testid^="inspector-figmaseg-align-"][data-state="off"]')
+      const numberInput = document.querySelector('[data-testid="inspector-number-w"]')
+      return {
+        surface: probe('var(--v-surface)'),
+        muted: probe('var(--v-muted)'),
+        segment: unpressedSegment ? getComputedStyle(unpressedSegment).color : null,
+        numberInput: numberInput ? getComputedStyle(numberInput).color : null,
+      }
+    })())`).then(JSON.parse)
+    checklist.add(`${label}: unpressed align segment ink equals --v-muted (${r.segment})`, r.segment === null || r.segment === r.muted)
+    checklist.add(`${label}: number input ink equals --v-surface`, r.numberInput === r.surface)
+  }
+
+  /* ---------------------------------------------------------- pixel gate --
+   * "nothing clips" from round 1, at the 240px floor. */
+  {
+    const handleBox = await elementBox(page, '[data-testid="inspector-resize-handle"]')
+    await drag(page, { x: handleBox.cx, y: handleBox.cy }, { x: handleBox.cx + 40, y: handleBox.cy })
+    await delay(200)
+    const width = await evaluate(page, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`)
+    const overflow = await evaluate(page, `JSON.stringify((() => {
+      const dock = document.querySelector('[data-testid="inspector"]').getBoundingClientRect()
+      const rows = [...document.querySelectorAll('[data-line]')]
+      return rows
+        .map((el) => { const r = el.getBoundingClientRect(); return { id: el.dataset.testid ?? el.className, right: r.right } })
+        .filter((r) => r.right > dock.right + 0.5)
+    })())`).then(JSON.parse)
+    checklist.add(
+      `${label}: nothing clips at ${Math.round(Number(width))}px width (${overflow.length === 0 ? 'none clipped' : overflow.map((r) => r.id).join(', ')})`,
+      overflow.length === 0,
+    )
+  }
+  page.close()
+
+  /* --------------------------------------------------- semantic checks --- */
+  const semPage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+  await semPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=${variant}` })
+  await waitFor(semPage, 'window.__lab && window.__lab.ready === true', `${label} sem ready`, 20000)
+  await delay(400)
+  await selectShape(semPage, RECT_ID)
+  await delay(200)
+  if (variant === 6) {
+    await clickElement(semPage, '[data-testid="inspector-accordion-openall"]')
+    await delay(200)
+  }
+
+  // The eye on Fill writes props.fill = 'none' and restores the previous style.
+  {
+    const before = await getShape(semPage, RECT_ID)
+    await reveal(semPage, '[data-testid="inspector-fill-eye"]')
+    await clickElement(semPage, '[data-testid="inspector-fill-eye"]')
+    await delay(150)
+    const off = await getShape(semPage, RECT_ID)
+    checklist.add(`${label}: the Fill eye writes props.fill = 'none' (was ${before.props.fill})`, off.props.fill === 'none')
+    await clickElement(semPage, '[data-testid="inspector-fill-eye"]')
+    await delay(150)
+    const restored = await getShape(semPage, RECT_ID)
+    checklist.add(`${label}: the Fill eye restores the previous fill style (${restored.props.fill})`, restored.props.fill === before.props.fill)
+  }
+
+  // The eye on Stroke writes dash: 'none' and restores.
+  {
+    const before = await getShape(semPage, RECT_ID)
+    await reveal(semPage, '[data-testid="inspector-stroke-eye"]')
+    await clickElement(semPage, '[data-testid="inspector-stroke-eye"]')
+    await delay(150)
+    const off = await getShape(semPage, RECT_ID)
+    checklist.add(`${label}: the Stroke eye writes dash: 'none' (was ${before.props.dash})`, off.props.dash === 'none')
+    await clickElement(semPage, '[data-testid="inspector-stroke-eye"]')
+    await delay(150)
+    const restored = await getShape(semPage, RECT_ID)
+    checklist.add(`${label}: the Stroke eye restores the previous dash (${restored.props.dash})`, restored.props.dash === before.props.dash)
+  }
+
+  // The picker's default strip writes the NAMED colour and clears the exact override.
+  {
+    await reveal(semPage, '[data-testid="inspector-fillswatch"]')
+    await clickElement(semPage, '[data-testid="inspector-fillswatch"]')
+    await delay(200)
+    await replaceFieldText(semPage, '[data-testid="inspector-fillswatch-hex"]', '#ff00ff')
+    await key(semPage, 'Enter', 'Enter')
+    await delay(200)
+    const withOverride = await getShape(semPage, RECT_ID)
+    checklist.add(`${label}: typing a hex into the Fill picker sets the exact override`, withOverride.meta.systemSketchPrimitiveOverride?.fillColor === '#ff00ff')
+    await reveal(semPage, '[data-testid="inspector-defaultswatch-color-green"]')
+    await clickElement(semPage, '[data-testid="inspector-defaultswatch-color-green"]')
+    await delay(200)
+    const afterSwatch = await getShape(semPage, RECT_ID)
+    checklist.add(`${label}: a default swatch writes the named colour (${afterSwatch.props.color})`, afterSwatch.props.color === 'green')
+    checklist.add(`${label}: a default swatch clears the exact fillColor override`, afterSwatch.meta.systemSketchPrimitiveOverride?.fillColor === undefined)
+  }
+
+  // The weight control writes the rung and, via Exact, the px override.
+  {
+    await selectItem(semPage, 'inspector-weightselect', 'inspector-weightselect-l')
+    await delay(150)
+    const rung = await getShape(semPage, RECT_ID)
+    checklist.add(`${label}: the weight Select writes the size rung (${rung.props.size})`, rung.props.size === 'l')
+    await selectItem(semPage, 'inspector-weightselect', 'inspector-weightselect-__exact__')
+    await delay(150)
+    await replaceFieldText(semPage, '[data-testid="inspector-number-strokeWidth"]', '9')
+    await key(semPage, 'Enter', 'Enter')
+    await delay(150)
+    const exact = await getShape(semPage, RECT_ID)
+    checklist.add(`${label}: Exact… reveals the strokeWidth px override (${exact.meta.systemSketchPrimitiveOverride?.strokeWidth})`, exact.meta.systemSketchPrimitiveOverride?.strokeWidth === 9)
+  }
+
+  semPage.close()
+
+  /* ------------------------------------------------------- resize/reload - */
+  {
+    const page2 = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize ready`, 20000)
+    await delay(300)
+    await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.dockWidth')`)
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize ready (cleared)`, 20000)
+    await delay(300)
+    const handleBox = await elementBox(page2, '[data-testid="inspector-resize-handle"]')
+    await drag(page2, { x: handleBox.cx, y: handleBox.cy }, { x: handleBox.cx - 80, y: handleBox.cy })
+    await delay(200)
+    const widthAfterDrag = Number(await evaluate(page2, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
+    checklist.add(`${label}: dragging the resize handle widens the dock to ~360px (now ${widthAfterDrag})`, Math.abs(widthAfterDrag - 360) < 4)
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?variant=${variant}` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', `${label} resize reload ready`, 20000)
+    await delay(300)
+    const widthAfterReload = Number(await evaluate(page2, `document.querySelector('[data-testid="inspector"]').getBoundingClientRect().width`))
+    checklist.add(`${label}: resizing to 360 survives a reload (now ${widthAfterReload})`, Math.abs(widthAfterReload - 360) < 4)
+    await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.dockWidth')`)
+    page2.close()
+  }
+
+  /* -------------------------------------------------------------- V6 only */
+  if (variant === 6) {
+    const page3 = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+    await page3.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=6` })
+    await waitFor(page3, 'window.__lab && window.__lab.ready === true', 'v6 chip ready', 20000)
+    await delay(400)
+    await selectShape(page3, RECT_ID)
+    await delay(200)
+    const before = await evaluate(page3, `document.querySelector('[data-testid="inspector-summary-fill"]')?.textContent`)
+    // The chip is read straight from the model, never a second copy of the
+    // state — an EDITOR-DRIVEN change (not a click through this row's own
+    // control) has to move it, which is the brief's own proof requirement.
+    await evaluate(page3, `void window.__lab.editor.updateShapes([{ id: '${RECT_ID}', type: 'geo', props: { fill: 'pattern' } }])`)
+    await delay(250)
+    const after = await evaluate(page3, `document.querySelector('[data-testid="inspector-summary-fill"]')?.textContent`)
+    checklist.add(`variant 6: the Fill summary chip updates when editor.updateShapes changes the fill (${before} -> ${after})`, before !== after && /pattern/.test(after ?? ''))
+    await evaluate(page3, `void window.__lab.editor.updateShapes([{ id: '${RECT_ID}', type: 'geo', props: { fill: 'solid' } }])`)
+    page3.close()
+  }
+}
+
+/* -------------------------------------------------- stock panel switch --
+ * Coordinator add-on, mid-task: a header button that swaps the Figma dock
+ * for tldraw's OWN `DefaultStylePanel`, and a pill that swaps back — see
+ * Inspector.tsx's own WHY on `StockPanelView`/`readPanelMode`. Run once
+ * (the switch is variant-independent chrome, not part of any one variant's
+ * anatomy), against the app's own DEFAULT variant.
+ */
+async function runStockPanelSwitchChecks(cdpPort, previewPort, checklist) {
+  const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+  await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors` })
+  await waitFor(page, 'window.__lab && window.__lab.ready === true', 'stock switch ready', 20000)
+  await delay(400)
+  await selectShape(page, RECT_ID)
+  await delay(300)
+
+  await reveal(page, '[data-testid="inspector-switch-to-stock"]')
+  await clickElement(page, '[data-testid="inspector-switch-to-stock"]')
+  await delay(300)
+  const idsInStock = await testIds(page)
+  checklist.add('the header button switches to the stock panel (.tlui-style-panel present)', await evaluate(page, `!!document.querySelector('.tlui-style-panel')`))
+  checklist.add('the Figma dock is gone in stock mode', !idsInStock.has('inspector'))
+  checklist.add('the "Inspector" pill is present once a shape is selected', idsInStock.has('inspector-switch-to-inspector'))
+
+  // The stock panel's own colour buttons work.
+  {
+    const before = await getShape(page, RECT_ID)
+    await reveal(page, '[data-testid="style.color.green"]')
+    await clickElement(page, '[data-testid="style.color.green"]')
+    await delay(200)
+    const after = await getShape(page, RECT_ID)
+    checklist.add(`the stock panel's own colour button writes props.color (${before.props.color} -> ${after.props.color})`, after.props.color === 'green')
+  }
+
+  await clickElement(page, '[data-testid="inspector-switch-to-inspector"]')
+  await delay(300)
+  const idsBack = await testIds(page)
+  checklist.add('the "Inspector" pill switches back to the Figma dock', idsBack.has('inspector'))
+  page.close()
+
+  // Persistence: a NON-seed load remembers the flip; a `?seed=` load ignores
+  // whatever is in localStorage (same rule dock width already follows).
+  {
+    const page2 = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', 'persist ready', 20000)
+    await delay(300)
+    await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.panelMode')`)
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', 'persist ready (cleared)', 20000)
+    await delay(300)
+    await reveal(page2, '[data-testid="inspector-switch-to-stock"]')
+    await clickElement(page2, '[data-testid="inspector-switch-to-stock"]')
+    await delay(300)
+    const stored = await evaluate(page2, `localStorage.getItem('tldraw_styling_lab.panelMode')`)
+    checklist.add(`flipping to stock persists to localStorage (${stored})`, stored === 'stock')
+
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', 'persist reload ready', 20000)
+    await delay(400)
+    const idsAfterReload = await testIds(page2)
+    checklist.add('a non-seed reload keeps the persisted stock mode', !idsAfterReload.has('inspector') && await evaluate(page2, `!!document.querySelector('.tlui-style-panel')`))
+
+    await page2.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock` })
+    await waitFor(page2, 'window.__lab && window.__lab.ready === true', 'seed reload ready', 20000)
+    await delay(400)
+    const idsSeedReload = await testIds(page2)
+    checklist.add('a ?seed= reload ignores the persisted stock mode (starts in inspector mode)', idsSeedReload.has('inspector'))
+
+    await evaluate(page2, `localStorage.removeItem('tldraw_styling_lab.panelMode')`)
+    page2.close()
+  }
+}
+
 async function main() {
   await rm(outDir, { recursive: true, force: true })
   await mkdir(outDir, { recursive: true })
@@ -370,8 +706,18 @@ async function main() {
       // something a plain load should silently do. This journey's own frame
       // checks below need it on; `tests/compat_smoke.mjs` is what proves the
       // DEFAULT (no switch) stays a zero-diff, pure-record board.
+      //
+      // WHY `&variant=1` here, explicitly, though it is no longer this app's
+      // own DEFAULT (round 2 moved that to 4 — `variants/theme.ts`'s own
+      // WHY): everything below reads round 1's group-based testids
+      // (`inspector-tile-geo-*`, `inspector-segment-fill-*`, `inspector-group-*`,
+      // …), which `figmaVariants.tsx` never draws. Pinning here is what keeps
+      // this whole block asserting the SAME thing it always has rather than
+      // silently starting to assert round 2's anatomy under round 1's name —
+      // the brief's own words: "switch the journey's default to 4 only where
+      // it asserts the new anatomy."
       const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-      await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors` })
+      await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors&variant=1` })
       await waitFor(page, 'window.__lab && window.__lab.ready === true', 'chrome route ready', 20000)
       await delay(500)
 
@@ -736,8 +1082,10 @@ async function main() {
       page.close()
 
       /* ----------------------------------------------------------- stock route */
+      // `stock.html` mounts the same `Inspector` — pinned to `&variant=1` for
+      // the same reason the chrome route above is (round 1's own testids).
       const stockPage = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-      await stockPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/stock.html?seed=stock` })
+      await stockPage.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/stock.html?seed=stock&variant=1` })
       await waitFor(stockPage, 'window.__lab && window.__lab.ready === true', 'stock route ready', 20000)
       await delay(500)
       await selectShape(stockPage, RECT_ID)
@@ -759,6 +1107,14 @@ async function main() {
       for (const variant of [1, 2, 3]) {
         await runMandatoryBehaviourChecks(cdpPort, previewPort, checklist, variant)
       }
+
+      /* --------------------------------------- round 2: 4/5/6 Figma anatomy */
+      for (const variant of [4, 5, 6]) {
+        await runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant)
+      }
+
+      /* ---------------------------------------- stock/inspector panel switch */
+      await runStockPanelSwitchChecks(cdpPort, previewPort, checklist)
     } finally {
       session.kill()
     }

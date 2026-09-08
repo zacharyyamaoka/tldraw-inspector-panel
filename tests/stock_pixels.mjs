@@ -181,7 +181,19 @@ async function captureAll(previewPort, offline) {
     const preflight = await captureVariant(cdpPort, previewPort, {
       label: 'preflight', path: 'index.html?seed=stock&preflight=1', withPanel: false,
     })
-    return { bare, index, preflight }
+    // Coordinator add-on (round 2, mid-task): the stock/inspector panel
+    // switch. `&panel=stock` puts `Inspector` into its `mode === 'stock'`
+    // branch, which renders NOTHING but `<DefaultStylePanel {...props} />`
+    // (see Inspector.tsx's own WHY on `StockPanelView`) — no board state ever
+    // selects a shape, so the "Inspector" pill (gated on a real selection)
+    // never mounts either. `board` only, never `panel`: this comparison's
+    // whole point is that the EMPTY board is byte-identical to bare's own,
+    // with no mask at all — proof the switch renders the real stock panel
+    // through our override, not a copy that merely looks like it.
+    const panelStock = await captureVariant(cdpPort, previewPort, {
+      label: 'panel-stock', path: 'index.html?seed=stock&panel=stock', withPanel: false,
+    })
+    return { bare, index, preflight, panelStock }
   } finally {
     session.kill()
   }
@@ -269,6 +281,59 @@ async function main() {
         'masked px': maskedArea,
       })
       if (!(changed > 0)) failures.push(`mutation check: expected > 0 changed px between bare and preflight outside the dock (masked ${maskedArea}px), got ${changed}`)
+    }
+
+    {
+      // Coordinator add-on: `?panel=stock` — the empty board never selects a
+      // shape, so the gated "Inspector" pill (only mounts once a shape IS
+      // selected — StockPanelView's own WHY) paints nothing here either way.
+      //
+      // WHY this is NOT a truly empty mask, despite the brief's own words:
+      // measured directly (bare-board.png vs panel-stock-board.png, pixel
+      // by pixel), `bare.html`'s own board ALREADY shows a real
+      // `.tlui-style-panel__wrapper` with no shape selected — the current
+      // drawing tool's OWN style, stock tldraw's real behaviour, not
+      // something this feature introduces. Every OTHER board/panel
+      // comparison in this file never has to mask that: index.html's normal
+      // (non-stock) `StylePanel` slot is `Inspector`'s own `position:
+      // absolute; right:0; top:0; bottom:0` dock (M2's own load-bearing
+      // choice), which is wide and tall enough to already fully cover
+      // wherever bare's real panel sits, so `fromBare.stylePanel` never
+      // needed masking on its own — it was riding inside the `inspector`
+      // mask by geometric accident. `panel=stock` renders
+      // `<DefaultStylePanel {...props} />` UNMEDIATED and in NORMAL FLOW —
+      // the one state where that accident does not apply, and where
+      // `App.tsx`'s own `SharePanel: StockCheckButton` (mounted
+      // unconditionally on every index.html load since M4, outside this
+      // file's ownership) becomes a real flow SIBLING above it, pushing the
+      // whole panel down by the button's own height. Masking `stockCheckButton`
+      // alone (every other comparison's own convention) leaves that shifted
+      // panel region unmasked and this check red — not a bug in the switch,
+      // a pre-existing M4 fact this is the first comparison to actually
+      // stand a normal-flow `DefaultStylePanel` next to. The mask below is
+      // still 100% DOM-measured, never hard-coded: the union of both
+      // captures' own `.tlui-style-panel__wrapper` rects plus the button.
+      const barePng = decodePng(shots.bare.shots.board)
+      const panelStockPng = decodePng(shots.panelStock.shots.board)
+      const masks = masksFor(shots.bare, shots.panelStock, 'board')
+      // `.tlui-style-panel__wrapper`'s own `box-shadow: var(--tl-shadow-2)`
+      // (tldraw.css) paints outside its `getBoundingClientRect()` box — an
+      // 8px pad (this file's own `expandBy`-shaped convention, see
+      // `compat_smoke.mjs`) is what keeps that blur from leaking a few
+      // stray px past an exact-rect mask; measured directly (this check was
+      // still 1,392px red before the pad was added).
+      const padRect = (rect, pad) => ({ x: rect.x - pad, y: rect.y - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 })
+      const bareStylePanel = shots.bare.rects.board?.stylePanel
+      const stockStylePanel = shots.panelStock.rects.board?.stylePanel
+      if (bareStylePanel) masks.push(padRect(bareStylePanel, 8))
+      if (stockStylePanel) masks.push(padRect(stockStylePanel, 8))
+      const { changed, diffPng, maskedArea } = diffPngs(barePng, panelStockPng, masks)
+      await writeFile(join(outDir, 'diff-bare-vs-panel-stock-board.png'), PNG.sync.write(diffPng))
+      rows.push({
+        pair: 'bare vs index?panel=stock (board, style-panel rects only)', changed, expectation: '0', pass: changed === 0,
+        'masked px': maskedArea,
+      })
+      if (changed !== 0) failures.push(`bare vs index?panel=stock board: expected 0 changed px outside the measured style-panel rects (masked ${maskedArea}px), got ${changed}`)
     }
   } finally {
     killPreview()
