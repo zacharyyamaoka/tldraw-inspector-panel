@@ -1,4 +1,4 @@
-// The M1 pixel gate.
+// The M1 pixel gate, extended in M2 for the Inspector dock.
 //
 // The whole point of this lab is that the chrome stack (Tailwind + shadcn +
 // Base UI) is provably inert inside tldraw's own canvas. "Provably" means a
@@ -10,6 +10,20 @@
 // the whole architecture exists to keep out (tailwindcss/preflight.css) behind
 // index.html's `?preflight=1` switch and confirm the diff comes back > 0 — a
 // gate that can't fail is not a gate.
+//
+// WHY the M2 mask, and why it does not weaken the gate: index.html now mounts
+// the Figma-shaped `Inspector` in place of tldraw's `DefaultStylePanel` — by
+// design (src/board/mount.tsx, `components={{ StylePanel: Inspector }}`), so
+// the two entries differ INSIDE that one rectangle on purpose. The dock is an
+// overlay `position:absolute` INSIDE `.tl-container` rather than a layout
+// sibling specifically so this is possible: it never changes the canvas's own
+// viewport width, so the camera bare.html and index.html each compute is
+// identical, and the only pixels a real regression could touch outside the
+// dock are still compared byte-for-byte at threshold 0. The mask is read from
+// the DOM on every capture (`[data-testid="inspector"]` on the chrome route,
+// `.tlui-style-panel__wrapper` on bare's own panel once a shape is selected)
+// rather than hard-coded, so a future dock resize cannot silently widen the
+// unchecked area without the gate's own printed "masked area" changing too.
 import { spawn } from 'node:child_process'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -17,7 +31,7 @@ import { fileURLToPath } from 'node:url'
 import { PNG } from 'pngjs'
 import pixelmatch from 'pixelmatch'
 import {
-  delay, evaluate, freePort, launchChrome, openCdpPage, waitFor,
+  delay, elementBox, evaluate, freePort, launchChrome, openCdpPage, waitFor,
 } from './cdp_kit.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -59,20 +73,60 @@ function decodePng(buffer) {
   return PNG.sync.read(buffer)
 }
 
-/** pixelmatch diff, threshold 0 (byte-exact) — returns { changed, diffPng }. */
-function diffPngs(aPng, bPng) {
+/** Zero one rectangular region (RGBA -> opaque black) in place, clipped to the
+ *  image bounds. Used on BOTH images of a pair so whatever either one painted
+ *  there — a real dock, nothing at all — reads as identical to pixelmatch. */
+function maskRegion(png, rect) {
+  const x0 = Math.max(0, Math.floor(rect.x))
+  const y0 = Math.max(0, Math.floor(rect.y))
+  const x1 = Math.min(png.width, Math.ceil(rect.x + rect.width))
+  const y1 = Math.min(png.height, Math.ceil(rect.y + rect.height))
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (png.width * y + x) << 2
+      png.data[i] = 0
+      png.data[i + 1] = 0
+      png.data[i + 2] = 0
+      png.data[i + 3] = 255
+    }
+  }
+}
+
+/** pixelmatch diff, threshold 0 (byte-exact) outside `masks` — returns
+ *  { changed, diffPng, maskedArea }. `masks` is a list of DOM rects (CSS px,
+ *  device-scale-factor 1 so they line up with screenshot pixels 1:1). */
+function diffPngs(aPng, bPng, masks = []) {
   const { width, height } = aPng
   if (width !== bPng.width || height !== bPng.height) {
     throw new Error(`size mismatch: ${width}x${height} vs ${bPng.width}x${bPng.height}`)
   }
+  let maskedArea = 0
+  for (const rect of masks) {
+    maskRegion(aPng, rect)
+    maskRegion(bPng, rect)
+    maskedArea += Math.round(rect.width) * Math.round(rect.height)
+  }
   const diff = new PNG({ width, height })
   const changed = pixelmatch(aPng.data, bPng.data, diff.data, width, height, { threshold: 0 })
-  return { changed, diffPng: diff }
+  return { changed, diffPng: diff, maskedArea }
+}
+
+/** The two dock rects a capture might carry: the chrome route's Inspector
+ *  overlay (`inspector`, always present on index.html) and bare's own stock
+ *  style panel (`stylePanel`, present only once a shape with styles is
+ *  selected). Either is absent — not zero-sized — where its route never draws
+ *  it; `elementBox` throwing on a missing selector is what tells them apart. */
+async function readDockRects(page) {
+  const rects = {}
+  try { rects.inspector = await elementBox(page, '[data-testid="inspector"]') } catch { /* not this route */ }
+  try { rects.stylePanel = await elementBox(page, '.tlui-style-panel__wrapper') } catch { /* nothing selected, or not bare */ }
+  return rects
 }
 
 async function captureVariant(cdpPort, previewPort, { label, path, withPanel }) {
   const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
   const shots = {}
+  const rects = {}
   try {
     await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/${path}` })
     await waitFor(page, 'window.__lab && window.__lab.ready === true', `${label} ready`, 20000)
@@ -81,6 +135,7 @@ async function captureVariant(cdpPort, previewPort, { label, path, withPanel }) 
     const board = await page.send('Page.captureScreenshot', { format: 'png' })
     shots.board = Buffer.from(board.data, 'base64')
     await writeFile(join(outDir, `${label}-board.png`), shots.board)
+    rects.board = await readDockRects(page)
 
     if (withPanel) {
       // WHY `void`: Editor#select returns `this` for chaining, and CDP's
@@ -93,11 +148,12 @@ async function captureVariant(cdpPort, previewPort, { label, path, withPanel }) 
       const panel = await page.send('Page.captureScreenshot', { format: 'png' })
       shots.panel = Buffer.from(panel.data, 'base64')
       await writeFile(join(outDir, `${label}-panel.png`), shots.panel)
+      rects.panel = await readDockRects(page)
     }
   } finally {
     page.close()
   }
-  return shots
+  return { shots, rects }
 }
 
 async function captureAll(previewPort, offline) {
@@ -113,6 +169,19 @@ async function captureAll(previewPort, offline) {
   } finally {
     session.kill()
   }
+}
+
+/** The rects to zero for one comparison: the chrome route's dock (always, it
+ *  never disappears — see Inspector.tsx) plus bare's own stock panel where
+ *  that capture has one (only the `panel` state; `board` has nothing selected
+ *  so bare draws no panel at all, and there is nothing there to mask). */
+function masksFor(bareVariant, indexVariant, what) {
+  const rects = []
+  const fromIndex = indexVariant.rects[what] ?? {}
+  const fromBare = bareVariant.rects[what] ?? {}
+  if (fromIndex.inspector) rects.push(fromIndex.inspector)
+  if (fromBare.stylePanel) rects.push(fromBare.stylePanel)
+  return rects
 }
 
 async function main() {
@@ -152,28 +221,45 @@ async function main() {
     console.log(`[stock_pixels] captured with offline=${offline}`)
 
     for (const what of ['board', 'panel']) {
-      const barePng = decodePng(shots.bare[what])
-      const indexPng = decodePng(shots.index[what])
-      const { changed, diffPng } = diffPngs(barePng, indexPng)
+      const barePng = decodePng(shots.bare.shots[what])
+      const indexPng = decodePng(shots.index.shots[what])
+      const masks = masksFor(shots.bare, shots.index, what)
+      const { changed, diffPng, maskedArea } = diffPngs(barePng, indexPng, masks)
       await writeFile(join(outDir, `diff-bare-vs-index-${what}.png`), PNG.sync.write(diffPng))
-      rows.push({ pair: `bare vs index (${what})`, changed, expectation: '0', pass: changed === 0 })
-      if (changed !== 0) failures.push(`bare vs index ${what}: expected 0 changed px, got ${changed}`)
+      rows.push({
+        pair: `bare vs index (${what})`, changed, expectation: '0', pass: changed === 0,
+        'masked px': maskedArea,
+      })
+      if (changed !== 0) failures.push(`bare vs index ${what}: expected 0 changed px outside the dock (masked ${maskedArea}px), got ${changed}`)
     }
 
     {
-      const barePng = decodePng(shots.bare.board)
-      const preflightPng = decodePng(shots.preflight.board)
-      const { changed, diffPng } = diffPngs(barePng, preflightPng)
+      const barePng = decodePng(shots.bare.shots.board)
+      const preflightPng = decodePng(shots.preflight.shots.board)
+      // WHY the same mask applies here: index.html (and its ?preflight=1
+      // variant) both always mount the Inspector, so this pair carries the
+      // identical dock-shaped difference the two checks above already accept.
+      // The mutation this check exists to catch — tailwindcss/preflight.css's
+      // global reset — reaches the canvas itself (fonts, spacing), which sits
+      // entirely outside the masked column, so masking here does not risk
+      // swallowing the one difference this check must still find.
+      const masks = masksFor(shots.bare, shots.preflight, 'board')
+      const { changed, diffPng, maskedArea } = diffPngs(barePng, preflightPng, masks)
       await writeFile(join(outDir, 'diff-bare-vs-preflight-board.png'), PNG.sync.write(diffPng))
-      rows.push({ pair: 'bare vs index+preflight (board, mutation check)', changed, expectation: '> 0', pass: changed > 0 })
-      if (!(changed > 0)) failures.push(`mutation check: expected > 0 changed px between bare and preflight, got ${changed}`)
+      rows.push({
+        pair: 'bare vs index+preflight (board, mutation check)', changed, expectation: '> 0', pass: changed > 0,
+        'masked px': maskedArea,
+      })
+      if (!(changed > 0)) failures.push(`mutation check: expected > 0 changed px between bare and preflight outside the dock (masked ${maskedArea}px), got ${changed}`)
     }
   } finally {
     killPreview()
   }
 
   console.log('')
-  console.table(rows.map((r) => ({ pair: r.pair, 'changed px': r.changed, expected: r.expectation, pass: r.pass ? 'PASS' : 'FAIL' })))
+  console.table(rows.map((r) => ({
+    pair: r.pair, 'changed px': r.changed, 'masked px': r['masked px'] ?? 0, expected: r.expectation, pass: r.pass ? 'PASS' : 'FAIL',
+  })))
   console.log(`\nPNGs written to ${outDir}`)
 
   if (failures.length > 0) {
