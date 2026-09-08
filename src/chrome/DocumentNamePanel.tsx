@@ -50,7 +50,7 @@ export function DocumentNamePanel() {
 					// containing "v" or "d" would also switch tools mid-word.
 					event.stopPropagation()
 				}}
-				className="pointer-events-auto h-6 w-40 rounded border border-[var(--tl-color-selected)] bg-[var(--tl-color-panel)] px-1.5 text-[13px] text-[var(--tl-color-text)] outline-none"
+				className="lab-name-input"
 			/>
 		)
 	}
@@ -65,9 +65,9 @@ export function DocumentNamePanel() {
 			data-testid="document-name"
 			title="Click to rename"
 			onClick={() => setEditing(true)}
-			className="pointer-events-auto flex h-6 max-w-[240px] items-center gap-1.5 truncate rounded border-0 bg-transparent px-1.5 text-[13px] text-[var(--tl-color-text)] outline-none hover:bg-[var(--tl-color-hint)]"
+			className="lab-name-button"
 		>
-			<span className="truncate">{name || getDocumentName()}</span>
+			<span className="lab-name-text">{name || getDocumentName()}</span>
 		</button>
 	)
 }
@@ -112,9 +112,9 @@ function AppBarName({ name, onEdit }: { name: string; onEdit(): void }) {
 			data-testid="document-name"
 			onClick={onEdit}
 			title="Click to rename"
-			className="pointer-events-auto flex h-6 max-w-[260px] items-center gap-2 rounded border-0 bg-transparent px-2 text-[13px] font-medium text-[var(--tl-color-text)] outline-none hover:bg-[var(--tl-color-hint)]"
+			className="lab-name-button"
 		>
-			<span className="truncate">{name}</span>
+			<span className="lab-name-text">{name}</span>
 			<span
 				aria-label={dirty ? 'Edited this session' : 'No edits this session'}
 				className={dirty ? 'size-2 shrink-0 rounded-full bg-[#f59e0b]' : 'size-2 shrink-0 rounded-full bg-[#22c55e]'}
@@ -153,8 +153,12 @@ export function MenuPanelWithName() {
 		<nav className="tlui-menu-zone">
 			<TldrawUiRow>
 				{MainMenu ? <MainMenu /> : null}
-				{PageMenu ? <PageMenu /> : null}
+				{/* Name BEFORE the page menu: his sketch puts identity next to the
+				    hamburger and the page after it — the board is the thing, the page
+				    is a view inside it, so that is also the right order to read. */}
 				<DocumentNamePanel />
+				<span aria-hidden="true" className="lab-menu-divider" />
+				{PageMenu ? <PageMenu /> : null}
 				{QuickActions || ActionsMenu ? (
 					<TldrawUiToolbar orientation="horizontal" label="Actions">
 						{QuickActions ? <QuickActions /> : null}

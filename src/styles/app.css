@@ -404,3 +404,72 @@
   transform: translateX(-50%);
   background: var(--v-border);
 }
+
+/* The menu zone's own chrome.
+ *
+ * WHY these live in CSS rather than as Tailwind utilities on the elements:
+ * they have to match tldraw's OWN buttons, which are styled by tldraw.css from
+ * `--tl-*` tokens. Zach, looking at the bar: "its formatting is not correct.
+ * Also, please do just a quick styling change on that top left menu to make it
+ * look more modern and match kind of the the look and feel of the bottom
+ * toolbar and right menus."
+ *
+ * The formatting bug was concrete: the name button was `h-6` (24px) sitting in
+ * a row of 40px tldraw buttons, so it floated above the baseline of "Page 1"
+ * beside it. Matching tldraw's own control height fixes the alignment rather
+ * than nudging it. */
+.lab-name-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  height: 40px;
+  max-width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: var(--tl-radius-2);
+  color: var(--tl-color-text-1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  pointer-events: auto;
+}
+
+.lab-name-button:hover {
+  background: var(--tl-color-hint);
+}
+
+.lab-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lab-name-input {
+  height: 28px;
+  width: 160px;
+  padding: 0 8px;
+  border-radius: var(--tl-radius-2);
+  border: 1px solid var(--tl-color-selected);
+  background: var(--tl-color-panel);
+  color: var(--tl-color-text-1);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  pointer-events: auto;
+}
+
+/* A hairline between the board and the page/actions group — the grouping his
+ * sketch draws, using tldraw's own divider colour so it reads as part of the
+ * bar rather than a decoration added on top of it. */
+.lab-menu-divider {
+  width: 1px;
+  align-self: center;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--tl-color-divider);
+  flex: 0 0 auto;
+}

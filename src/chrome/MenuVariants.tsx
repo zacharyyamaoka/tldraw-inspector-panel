@@ -13,8 +13,9 @@ import {
 	TldrawUiMenuSubmenu,
 	useDialogs,
 } from 'tldraw'
-import { useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { FileMenu, GestureMenu } from './LabMainMenu'
+import { setTuningOpen } from './tuningStore'
 import type React from 'react'
 import {
 	DEFAULT_GESTURE_SETTINGS,
@@ -63,8 +64,35 @@ export function BoardMenuVariant() {
  * separate popovers and never seeing them together; a dialog shows the whole
  * mapping at once, which is how anyone actually reasons about a keymap.
  */
-export function SettingsDialogVariant() {
+/** Opening Settings, in one place, so the menu item and the shortcut cannot drift. */
+export function useOpenSettings() {
 	const { addDialog } = useDialogs()
+	return useCallback(() => {
+		addDialog({ component: ({ onClose }) => <SettingsDialog onClose={onClose} /> })
+	}, [addDialog])
+}
+
+export function SettingsDialogVariant() {
+	const openSettings = useOpenSettings()
+
+	// WHY a real listener: `kbd="cmd+,"` on a menu item is only a LABEL — tldraw
+	// renders the hint but registers nothing, so the shortcut Zach saw printed
+	// beside the item did nothing when pressed ("Pressing control, comma,
+	// doesn't open it right now"). Printing a shortcut that does not exist is
+	// worse than printing none.
+	useEffect(() => {
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== ',' || !(event.ctrlKey || event.metaKey)) return
+			const target = event.target
+			if (target instanceof HTMLElement
+				&& (target.matches('input, textarea, select') || target.isContentEditable)) return
+			event.preventDefault()
+			openSettings()
+		}
+		window.addEventListener('keydown', onKeyDown)
+		return () => window.removeEventListener('keydown', onKeyDown)
+	}, [openSettings])
+
 	return (
 		<DefaultMainMenu>
 			<TldrawUiMenuGroup id="lab-file-v3">
@@ -73,7 +101,7 @@ export function SettingsDialogVariant() {
 					id="open-settings"
 					label="Settings…"
 					kbd="cmd+,"
-					onSelect={() => { addDialog({ component: ({ onClose }) => <SettingsDialog onClose={onClose} /> }) }}
+					onSelect={() => { openSettings() }}
 				/>
 			</TldrawUiMenuGroup>
 			<DefaultMainMenuContent />
@@ -147,6 +175,17 @@ function SettingsDialog({ onClose }: { onClose(): void }) {
 			<TldrawUiDialogFooter className="tlui-dialog__footer__actions">
 				<TldrawUiButton type="normal" onClick={() => setGestureSettings(DEFAULT_GESTURE_SETTINGS)}>
 					<TldrawUiButtonLabel>Reset</TldrawUiButtonLabel>
+				</TldrawUiButton>
+				{/* WHY this closes the dialog rather than opening a panel beside it:
+				    a sensitivity is judged by FEEL, and feel needs the board. Leaving
+				    the modal up would keep the canvas blocked, which is the whole
+				    complaint this button answers. */}
+				<TldrawUiButton
+					type="normal"
+					data-testid="settings-tune-live"
+					onClick={() => { setTuningOpen(true); onClose() }}
+				>
+					<TldrawUiButtonLabel>Tune live…</TldrawUiButtonLabel>
 				</TldrawUiButton>
 				<TldrawUiButton type="primary" onClick={onClose}>
 					<TldrawUiButtonLabel>Done</TldrawUiButtonLabel>
