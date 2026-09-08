@@ -9,27 +9,68 @@ import {
 
 /** How far one wheel notch pans, in screen px. Matches tldraw's own feel. */
 const PAN_STEP = 100
+/** One notch at 100%. Matches what tldraw's own wheel zoom does per notch, so
+ *  rebinding a gesture to zoom feels like the gesture it replaced. */
+const ZOOM_STEP = 1.1
+
+function panStep(settings: GestureSettings): number {
+	return PAN_STEP * (settings.panSpeedPercent / 100)
+}
+
+function zoomBy(editor: Editor, direction: 1 | -1, settings: GestureSettings): boolean {
+	const screenPoint = editor.inputs.getCurrentScreenPoint()
+	const camera = editor.getCamera()
+	const factor = Math.pow(ZOOM_STEP, direction * (settings.zoomSpeedPercent / 100))
+	const nextZoom = camera.z * factor
+
+	// Keep the page point under the cursor fixed, by asking the editor what moved
+	// rather than reimplementing its screen<->page convention. Two setCamera
+	// calls in one frame produce one visible change.
+	const before = editor.screenToPage(screenPoint)
+	editor.setCamera({ x: camera.x, y: camera.y, z: nextZoom })
+	const after = editor.screenToPage(screenPoint)
+	editor.setCamera({
+		x: camera.x + (after.x - before.x),
+		y: camera.y + (after.y - before.y),
+		z: nextZoom,
+	})
+	return true
+}
+
 function panBy(editor: Editor, dx: number, dy: number): boolean {
 	const camera = editor.getCamera()
 	editor.setCamera({ x: camera.x + dx / camera.z, y: camera.y + dy / camera.z, z: camera.z })
 	return true
 }
 
-function runCommand(editor: Editor, command: WheelCommand): boolean {
+function runCommand(editor: Editor, command: WheelCommand, settings: GestureSettings): boolean {
 	switch (command) {
 		case 'none': return true
 		// The editor has no `pan()`; moving the camera IS the pan. The screen
 		// step is divided by zoom so a notch covers the same visible distance at
 		// every zoom level, which is what makes it feel like scrolling rather
 		// than like moving a map.
-		case 'pan-up': return panBy(editor, 0, PAN_STEP)
-		case 'pan-down': return panBy(editor, 0, -PAN_STEP)
-		case 'pan-left': return panBy(editor, PAN_STEP, 0)
-		case 'pan-right': return panBy(editor, -PAN_STEP, 0)
-		// Zoom at the POINTER, not the viewport centre: a wheel gesture is
-		// aimed at whatever is under the cursor.
-		case 'zoom-in': editor.zoomIn(editor.inputs.getCurrentScreenPoint(), { animation: { duration: 0 } }); return true
-		case 'zoom-out': editor.zoomOut(editor.inputs.getCurrentScreenPoint(), { animation: { duration: 0 } }); return true
+		// Scaled by the SAME slider tldraw's own wheel pan reads, so a rebound
+		// pan and a default pan move by the same amount. Without this multiplier
+		// the sensitivity control was silently ignored the moment a gesture was
+		// rebound — the identical defect the zoom commands had.
+		case 'pan-up': return panBy(editor, 0, panStep(settings))
+		case 'pan-down': return panBy(editor, 0, -panStep(settings))
+		case 'pan-left': return panBy(editor, panStep(settings), 0)
+		case 'pan-right': return panBy(editor, -panStep(settings), 0)
+		// Zoom at the POINTER, not the viewport centre, and at the user's own
+		// sensitivity.
+		//
+		// WHY not `editor.zoomIn()`: it is a BUTTON action, not a wheel action.
+		// It steps through tldraw's fixed zoom stops — measured, three notches
+		// took the board from 1.0 to 8.0 — and it ignores `cameraOptions.zoomSpeed`
+		// entirely. So a REBOUND wheel zoom was both violent and completely deaf
+		// to the sensitivity slider: 25% and 400% both produced 1.0 -> 8.0. That
+		// is very likely what Zach actually saw when he said "the zoom sensitivity
+		// doesn't seem to be making any effect". A default binding never hit it,
+		// because tldraw's own wheel handler does honour zoomSpeed.
+		case 'zoom-in': return zoomBy(editor, 1, settings)
+		case 'zoom-out': return zoomBy(editor, -1, settings)
 		case 'undo': editor.undo(); return true
 		case 'redo': editor.redo(); return true
 		case 'next-page':
@@ -86,7 +127,7 @@ export function useGestures(editor: Editor | null): void {
 				|| (gesture === 'ctrlWheelUp' && command === 'zoom-in')
 			if (isStockDefault) return
 
-			if (!runCommand(editor, command)) return
+			if (!runCommand(editor, command, settings)) return
 			event.preventDefault()
 			event.stopPropagation()
 		}
