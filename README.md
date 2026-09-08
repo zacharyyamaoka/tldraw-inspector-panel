@@ -303,21 +303,29 @@ bug the sweep caught — see Deviations). `inspectorModel.ts` carries **59**
   label and the shape's edge, and the minimum width `GEO_SHAPE_MIN_WIDTHS`
   reserves for it. Both hard-coded by tldraw, both real `getDefaultDisplayValues`
   outputs.
-- **The frame set** — `FrameShapeUtil.configure({ showColors: true })`
+- **The frame set** — `FrameShapeUtil.configure({ showColors })`
   (`configuredUtils.ts`) is the stock switch that makes a frame's own colour
   paint at all; without it, `props.color` exists on every frame record
   (tlschema's own migration defaults it to `'black'`) but is registered only
-  as a plain validator, never a real `DefaultColorStyle` StyleProp. The
-  `color` swatch row's `applies` predicate now calls a new `styleReaches`
-  helper (`editor.styleProps[type]?.has(style)`) instead of hard-coding a
-  frame exclusion, so it reaches `showColorsFillColor`,
-  `showColorsStrokeColor` and the three heading variants once configured, and
-  correctly keeps withholding on the stock route. There is no independent
-  "heading colour" — all five are derived from the same one `color` prop, so
-  no separate rows exist for them beyond the swatch. The five `showColors:
-  false` defaults (`fillColor`, `strokeColor`, `headingFillColor`,
-  `headingStrokeColor`, `headingTextColor`) are documented unreached: with
-  `showColors` permanently on in this app, the util never selects them.
+  as a plain validator, never a real `DefaultColorStyle` StyleProp. **Off by
+  default, opt-in via `?frames=colors`** (read once at module scope,
+  `FRAME_COLORS_ENABLED`) — turning it on unconditionally broke
+  `tests/compat_smoke.mjs`'s "whole-board diff is 0 on a pure layer-1 board"
+  the moment M3 merged with M4 (measured 83 changed px on the seeded, all-
+  black-frame board); see docs/log.md's "showColors is opt-in" entry. The
+  `color` swatch row's `applies` predicate calls `styleReaches`
+  (`editor.styleProps[type]?.has(style)`) — which already tracks the switch
+  correctly, no change needed there — AND a second, more direct
+  `frameShowColorsOn` check (`util.options.showColors === true`),
+  belt-and-suspenders after that regression. Once on, the row reaches
+  `showColorsFillColor`, `showColorsStrokeColor` and the three heading
+  variants; there is no independent "heading colour" — all five are derived
+  from the same one `color` prop, so no separate rows exist for them beyond
+  the swatch. The five `showColors: false` defaults (`fillColor`,
+  `strokeColor`, `headingFillColor`, `headingStrokeColor`,
+  `headingTextColor`) are documented unreached: with the switch on, the
+  util never selects them; with it off (the default), they're what actually
+  paints.
 - **`url`** — an ordinary `linkUrl` prop on six record types (geo, note,
   image, bookmark, embed, video); one `propField`, `hasProp` decides where it
   applies.

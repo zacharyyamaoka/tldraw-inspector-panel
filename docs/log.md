@@ -1,5 +1,77 @@
 # Log
 
+## 2026-09-07 — showColors is opt-in
+
+M3 landed `FrameShapeUtil.configure({ showColors: true })` unconditionally,
+which broke the M4 compat invariant the moment the two lanes merged:
+`tests/compat_smoke.mjs`'s "whole-board diff is 0 on a pure layer-1 board"
+measured **83 changed px** on the seeded board — a plain `color: 'black'`
+frame, no override anywhere — because `showColors` painted the lab's own
+`showColorsFillColor`/`showColorsStrokeColor` derived from `props.color`
+instead of stock's hard-coded black default, and those two values only
+happen to agree when the frame's colour IS black.
+
+**Fix: `showColors` is off by default, opt-in via `?frames=colors`**
+(`configuredUtils.ts`'s `FRAME_COLORS_ENABLED`, read once at module scope —
+a `ShapeUtil` option is fixed at `.configure()` time, the same reason
+`board/mount.tsx`'s `readSeedMode()` reads `location.search` once rather
+than in a hook). Stock-by-default is this lab's first rule; a frame's own
+colour is a real layer-2 addition someone opts into, not something a plain
+load should silently paint. `tests/compat_smoke.mjs`'s check is back to 0,
+unconditionally.
+
+**The frame Colour row is gated on the same switch, two ways.**
+`inspectorModel.ts`'s `styleReaches` already asked the right question
+(`editor.styleProps.frame?.has(DefaultColorStyle)`) and automatically tracks
+the new default correctly, no change needed there. Added `frameShowColorsOn`
+alongside it — reads `editor.getShapeUtil(shape).options.showColors` directly
+— as a second, more explicit check ANDed onto the Colour row's `applies` for
+frames specifically: belt-and-suspenders after a real regression, not
+because `styleReaches` was wrong.
+
+**Journeys**: `tests/inspector_smoke.mjs`'s chrome-route navigation now
+carries `&frames=colors` (its frame checks need the switch on);
+`tests/compat_smoke.mjs` stays on plain `?seed=stock` for checks (a)-(d) and
+adds one more (e): a fresh `&frames=colors` navigation, with the frame
+recoloured to `blue` (the seed's `black` is indistinguishable from stock's
+own hard-coded black default and would prove nothing), asserts the
+**whole-board** reading is a real, non-zero, non-refused difference — the
+layer-2 floor made visible, not a bug.
+
+**A real, separate finding along the way**: the frame's own PER-SHAPE row in
+that same check reads **0**, even with the recolour — not a bug in this fix,
+a floor of `runStockCheck`'s per-shape crop. A frame's heading-label geometry
+is `excludeFromShapeBounds: true` (`FrameShapeUtil.getGeometry`), so the crop
+`editor.getShapePageBounds(id).expandBy(8)` takes around a frame's own bounds
+never includes the label pill where `showColorsHeadingFill`/
+`showColorsHeadingStroke` diverge most from stock — and the body's own 1px
+`showColorsStrokeColor` border is thin enough that pixelmatch's
+anti-aliasing tolerance (default `includeAA: false`, `PIXELMATCH_THRESHOLD =
+0.1`) absorbs nearly all of it at this shape's size, measured directly:
+sampling the two rasterized crops pixel-by-pixel found a maximum channel-sum
+difference of 8 anywhere in a 316×236 image. The whole-board crop is not
+geometry-bounds-clipped the same way and reads the real 87px difference.
+Documented in `tests/compat_smoke.mjs` at the point it's measured, not fixed
+here — it's a characteristic of the existing M4 diffing tool against a thin,
+near-white UI element, not something this switch caused.
+
+**Also fixed, found while verifying the switch end to end**: the Theme
+tab's `TabsList` (`Inspector.tsx`) started at the dock's own `top: 0`,
+which — because the dock is `position: absolute` (M2's own load-bearing
+choice for the pixel gate, kept) rather than a normal-flow flex sibling the
+way stock tldraw's `.tlui-style-panel__wrapper` is — physically overlapped
+the M4 `StockCheckButton`'s `.tlui-share-zone` (~32px tall, top-right) the
+moment that button landed on `main`. `elementFromPoint` at the Theme tab
+trigger's own center returned the Stock Check button, not the tab, so no
+click ever reached it — `theme_smoke.mjs`'s very first check
+("the Theme tab mounts ThemePanel") caught it. Fixed with a `mt-9` clearance
+on the `<Tabs>` element (the outer `data-testid="inspector"` rect — what the
+pixel gate masks — is unchanged).
+
+`npm run check` is green on all four journeys: `tsc -b`, 115 vitest tests,
+the pixel gate (0/0/763), `test:inspector` (33/33), `test:compat` (14/14,
+13 + 1 new), `test:theme` (12/12).
+
 ## 2026-09-07 — M3: the rest of layer 2, and the Theme tab
 
 Landed the M3 brief: a re-measured display-value census
