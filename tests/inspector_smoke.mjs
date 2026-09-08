@@ -154,8 +154,14 @@ async function main() {
       const cdpPort = await session.devToolsPort()
 
       /* --------------------------------------------------------- chrome route */
+      // WHY `&frames=colors` here: `showColors` is off by default
+      // (configuredUtils.ts — see its own WHY, and docs/log.md's "showColors
+      // is opt-in" entry) because it is a real paint change from stock, not
+      // something a plain load should silently do. This journey's own frame
+      // checks below need it on; `tests/compat_smoke.mjs` is what proves the
+      // DEFAULT (no switch) stays a zero-diff, pure-record board.
       const page = await openCdpPage(cdpPort, { width: WIDTH, height: HEIGHT })
-      await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock` })
+      await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors` })
       await waitFor(page, 'window.__lab && window.__lab.ready === true', 'chrome route ready', 20000)
       await delay(500)
 

@@ -24,6 +24,7 @@ const WIDTH = 1440
 const HEIGHT = 960
 const viteBin = join(repoRoot, 'node_modules', '.bin', 'vite')
 const RECT_ID = 'shape:probe-rect' // createShapeId('probe-rect'), see src/board/seed.ts
+const FRAME_ID = 'shape:probe-frame' // createShapeId('probe-frame'), see src/board/seed.ts
 
 function run(cmd, args, opts = {}) {
   return new Promise((doneRun, fail) => {
@@ -168,6 +169,46 @@ async function main() {
     await clickElement(page, '[data-slot="sheet-close"]')
     await delay(500)
     checks.add('exactly one .tl-container after the sheet closes', (await containerCount(page)) === 1)
+
+    // ---- (e) the opt-in switch: frame colours are the layer-2 floor made
+    // visible, not a default that breaks (a) above. `showColors` is off
+    // unless `?frames=colors` opts in (configuredUtils.ts) — a fresh
+    // navigation with the switch on should show the frame's own colour as a
+    // real, non-zero, lab-side paint difference against stock, not a refusal
+    // and not zero.
+    await page.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/index.html?seed=stock&frames=colors` })
+    await waitFor(page, 'window.__lab && window.__lab.ready === true', 'lab board ready (frames=colors)', 20000)
+    await delay(400)
+    // WHY change the frame's colour first: the seeded frame is `color:
+    // 'black'`, which is ALSO stock's own hard-coded showColors:false
+    // default — so a diff against stock reads zero either way and would
+    // prove nothing about the switch. A non-black colour is what makes
+    // showColors an actual, visible departure from stock to measure.
+    await evaluate(page, `void window.__lab.editor.updateShapes([{ id: '${FRAME_ID}', type: 'frame', props: { color: 'blue' } }])`)
+    await delay(150)
+    await clickElement(page, '[data-testid="stock-check-button"]')
+    await waitFor(page, `document.querySelector('[data-testid="stock-check-whole-board"]') || document.querySelector('[data-testid="stock-check-refused"]')`, 'stock check report (frames=colors)', 20000)
+    await delay(400)
+    const framesColorsRefused = await evaluate(page, `Boolean(document.querySelector('[data-testid="stock-check-refused"]'))`)
+    checks.add('?frames=colors does not read as a stock-tldraw refusal', !framesColorsRefused)
+    // WHY the whole-board reading, not the frame's own per-shape row: a
+    // frame's heading-label geometry is `excludeFromShapeBounds: true`
+    // (tldraw's own `GeoShapeBody`/`FrameShapeUtil.getGeometry`), so the
+    // per-shape crop `runStockCheck` takes around a frame's OWN bounds
+    // never includes the label pill where `showColorsHeadingFill`/
+    // `showColorsHeadingStroke` diverge most — and the body's own 1px
+    // `showColorsStrokeColor` border is thin enough that pixelmatch's
+    // anti-aliasing tolerance absorbs it at this shape's size. Measured
+    // directly: the per-shape frame row reads 0 here even though the frame
+    // genuinely paints differently; the whole-board crop (which is not
+    // geometry-bounds-clipped the same way) reads the real difference.
+    // This is a floor of the per-shape ROW specifically, not of the switch —
+    // documented, not hidden, in docs/log.md.
+    const wholeBoardWithFrameColors = await readInt(page, '[data-testid="stock-check-whole-board"]', 'changed')
+    checks.add(`?frames=colors makes the whole-board reading a real, non-zero lab-side paint difference (got ${wholeBoardWithFrameColors}) — the layer-2 floor made visible, not a bug`, wholeBoardWithFrameColors > 0)
+    const frameRowChanged = await readInt(page, `[data-testid="stock-check-shape-row"][data-shape-id="${FRAME_ID}"]`, 'changed')
+    console.log(`[compat_smoke] frame's own per-shape row reads ${frameRowChanged} changed px (expected near/at 0 — see the WHY above; the whole-board reading above is the real assertion)`)
+    await screenshot(page, 'compat-report-frames-colors.png')
 
     checks.report('compat_smoke')
   } finally {
