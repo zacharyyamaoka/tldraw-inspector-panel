@@ -19,7 +19,7 @@ import {
 	type PrimitiveInspectorModel,
 } from './inspectorModel'
 import {
-	SYSTEMSKETCH_PRIMITIVE_OVERRIDE_META_KEY as KEY,
+	PRIMITIVE_OVERRIDE_META_KEY as KEY,
 	hasPrimitiveOverride,
 	markResolvesPrimitiveOverrides,
 } from './overrides'
@@ -309,7 +309,7 @@ describe('getPrimitiveInspectorModel', () => {
 		const shape = geo('a')
 		const { editor } = fakeEditor([shape])
 		applyPrimitiveInspectorControl(editor, 'cornerRadius', 40)
-		expect(shape.props.geo).toBe('systemsketch-rounded-rect')
+		expect(shape.props.geo).toBe('rounded-rect')
 		// `read` maps the rounded rectangle to `rectangle`, so this IS the tile a
 		// person clicks to un-round — and it used to skip the cleanup.
 		applyPrimitiveInspectorControl(editor, 'geo', 'rectangle')
@@ -335,7 +335,7 @@ describe('getPrimitiveInspectorModel', () => {
 		const model = getPrimitiveInspectorModel(fakeEditor([geo('a')]).editor)!
 		const values = find(model, 'geo')!.options!.map((option) => option.value)
 		expect(values).toHaveLength(20)
-		expect(values).not.toContain('systemsketch-rounded-rect')
+		expect(values).not.toContain('rounded-rect')
 		expect(values).not.toContain('excalidraw-rounded-rect')
 	})
 
@@ -455,7 +455,7 @@ describe('geometry and size read what they write', () => {
 	})
 
 	it('shows a rounded rectangle as `rectangle` in the geometry grid', () => {
-		const shape = geo('a', { geo: 'systemsketch-rounded-rect' })
+		const shape = geo('a', { geo: 'rounded-rect' })
 		const model = getPrimitiveInspectorModel(fakeEditor([shape]).editor)!
 		expect(find(model, 'geo')!.value).toBe('rectangle')
 	})
@@ -524,7 +524,7 @@ describe('corner radius', () => {
 		const shape = geo('a')
 		const { editor } = fakeEditor([shape])
 		applyPrimitiveInspectorControl(editor, 'cornerRadius', 24)
-		expect(shape.props.geo).toBe('systemsketch-rounded-rect')
+		expect(shape.props.geo).toBe('rounded-rect')
 		expect(shape.meta[KEY]).toEqual({ cornerRadius: 24 })
 
 		// Zero has to leave the record on the plain stock rectangle: a round

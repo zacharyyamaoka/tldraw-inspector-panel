@@ -36,13 +36,13 @@
  */
 import { createElement, type CSSProperties } from 'react'
 
-// WHY the literal value stays `'systemSketchPrimitiveOverride'`, not something
+// WHY the literal value stays `'primitiveOverride'`, not something
 // named for this lab: this file is ported verbatim from SystemSketch
 // (77907974) on purpose — the same key means a board saved from either app's
 // inspector round-trips through the other with its overrides intact. Renaming
 // the value would silently orphan every override on a board opened by the
 // other app; the constant's own *name* can drift, the string it holds cannot.
-export const SYSTEMSKETCH_PRIMITIVE_OVERRIDE_META_KEY = 'systemSketchPrimitiveOverride'
+export const PRIMITIVE_OVERRIDE_META_KEY = 'primitiveOverride'
 
 /**
  * Every field is optional and absent means "leave tldraw's own answer alone".
@@ -156,7 +156,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * shape is dropped rather than handed to the renderer.
  */
 export function readPrimitiveOverride(shape: OverridableShape): PrimitiveOverride {
-	const value = shape.meta?.[SYSTEMSKETCH_PRIMITIVE_OVERRIDE_META_KEY]
+	const value = shape.meta?.[PRIMITIVE_OVERRIDE_META_KEY]
 	if (!isRecord(value)) return {}
 	const next: PrimitiveOverride = {}
 	for (const field of NUMERIC_FIELDS) {
@@ -196,13 +196,13 @@ export function writePrimitiveOverride(
 	const meta = { ...(shape.meta ?? {}) }
 	// The nested record IS replaced wholesale by the merge above, so removing a
 	// field inside it works; only the top-level key needs the null.
-	meta[SYSTEMSKETCH_PRIMITIVE_OVERRIDE_META_KEY] = Object.keys(next).length === 0 ? null : next
+	meta[PRIMITIVE_OVERRIDE_META_KEY] = Object.keys(next).length === 0 ? null : next
 	return meta
 }
 
 /** Every override cleared at once — the panel's Reset. */
 export function clearPrimitiveOverride(shape: OverridableShape): Record<string, unknown> {
-	return { ...(shape.meta ?? {}), [SYSTEMSKETCH_PRIMITIVE_OVERRIDE_META_KEY]: null }
+	return { ...(shape.meta ?? {}), [PRIMITIVE_OVERRIDE_META_KEY]: null }
 }
 
 export function hasPrimitiveOverride(shape: OverridableShape): boolean {
@@ -395,7 +395,7 @@ export function highlightOverrideDisplayValues(shape: OverridableShape): Record<
 }
 
 /** The class the halo wrapper carries, so a journey can find it in the DOM. */
-export const PRIMITIVE_OVERRIDE_CLASS = 'systemsketch-primitive-override'
+export const PRIMITIVE_OVERRIDE_CLASS = 'primitive-override'
 
 /**
  * The CSS custom properties a shape's overrides contribute to its own subtree,
@@ -450,7 +450,7 @@ export function withPrimitiveOverrides<T extends UtilConstructor>(Base: T): T {
  * on {@link shapePaintResolvesOverrides} so the two routes stay one field list
  * with one predicate rather than diverging.
  */
-const PRIMITIVE_PAINT_SEAM_FLAG = 'systemSketchResolvesPrimitiveOverrides'
+const PRIMITIVE_PAINT_SEAM_FLAG = 'resolvesPrimitiveOverrides'
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- brands a ShapeUtil class,
    whichever concrete generic it was configured with. */

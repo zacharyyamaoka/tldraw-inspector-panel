@@ -112,7 +112,7 @@ function describeParseError(error: TldrawFileParseError): string {
  * against `GeoShapeGeoStyle`/`DefaultColorStyle` — but those are mutable
  * module-singleton arrays, and `src/inspector/configuredUtils.ts` (imported by
  * `src/App.tsx`/`src/stock.tsx` before this ever runs) has already permanently
- * appended `'systemsketch-rounded-rect'` to the geo enum FOR THIS ENTIRE PAGE.
+ * appended `'rounded-rect'` to the geo enum FOR THIS ENTIRE PAGE.
  * The hidden "stock" mount lives in the same JS realm, so its schema's
  * validator sees the same mutated array and accepts a record a real, separate
  * stock tldraw process would refuse outright. `stockEnums.ts` holds the real,

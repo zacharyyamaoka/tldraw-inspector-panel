@@ -4,7 +4,7 @@
 // time, because those are mutable module-singleton arrays
 // (`EnumStyleProp#addValues` in `@tldraw/tlschema` mutates in place) and
 // `src/inspector/configuredUtils.ts`'s `GeoShapeUtil.configure({
-// customGeoTypes })` permanently appends `'systemsketch-rounded-rect'` to
+// customGeoTypes })` permanently appends `'rounded-rect'` to
 // `GeoShapeGeoStyle.values` the moment it is imported anywhere in this page's
 // module graph — which `src/App.tsx` and `src/stock.tsx` both do before the
 // Stock check button ever runs. By the time `runStockCheck` executes, the

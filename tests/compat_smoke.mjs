@@ -118,7 +118,7 @@ async function main() {
     // does reach real pixels through getCustomDisplayValues, on the lab side only.
     await evaluate(page, `void window.__lab.editor.updateShapes([{
       id: '${RECT_ID}', type: 'geo',
-      meta: { systemSketchPrimitiveOverride: { fillColor: '#ff0000', fillOpacity: 1 } },
+      meta: { primitiveOverride: { fillColor: '#ff0000', fillOpacity: 1 } },
     }])`)
     await clickElement(page, '[data-slot="sheet-close"]')
     await delay(300)
@@ -149,8 +149,8 @@ async function main() {
     // Clearing it isolates the assertion to the refusal path alone.
     await evaluate(page, `void window.__lab.editor.updateShapes([{
       id: '${RECT_ID}', type: 'geo',
-      meta: { systemSketchPrimitiveOverride: null },
-      props: { geo: 'systemsketch-rounded-rect' },
+      meta: { primitiveOverride: null },
+      props: { geo: 'rounded-rect' },
     }])`)
     await clickElement(page, '[data-testid="stock-check-button"]')
     await waitFor(page, `document.querySelector('[data-testid="stock-check-whole-board"]')`, 'stock check refusal report', 20000)

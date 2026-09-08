@@ -56,7 +56,7 @@ export const GEO_GLYPHS: Record<string, string> = {
 	cloud: 'M6.5 18.5a4.5 4.5 0 0 1-.6-8.96A5.5 5.5 0 0 1 16.4 8.2a4 4 0 0 1 1.1 10.3z',
 	heart: 'M12 20.5S3 14.8 3 9.6A4.6 4.6 0 0 1 12 7.6a4.6 4.6 0 0 1 9 2C21 14.8 12 20.5 12 20.5z',
 	/** The app's own rounded rectangle, registered through `customGeoTypes`. */
-	'systemsketch-rounded-rect': 'M7 5h10a4.5 4.5 0 0 1 4.5 4.5v5A4.5 4.5 0 0 1 17 19H7a4.5 4.5 0 0 1-4.5-4.5v-5A4.5 4.5 0 0 1 7 5z',
+	'rounded-rect': 'M7 5h10a4.5 4.5 0 0 1 4.5 4.5v5A4.5 4.5 0 0 1 17 19H7a4.5 4.5 0 0 1-4.5-4.5v-5A4.5 4.5 0 0 1 7 5z',
 	'excalidraw-rounded-rect': 'M7 5h10a4.5 4.5 0 0 1 4.5 4.5v5A4.5 4.5 0 0 1 17 19H7a4.5 4.5 0 0 1-4.5-4.5v-5A4.5 4.5 0 0 1 7 5z',
 }
 

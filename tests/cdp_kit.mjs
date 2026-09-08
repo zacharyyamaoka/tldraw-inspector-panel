@@ -23,6 +23,7 @@
  *  - It must be usable without `startApp()`.
  */
 import { spawn } from 'node:child_process'
+import { inflateSync } from 'node:zlib'
 import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import net from 'node:net'
@@ -333,6 +334,43 @@ export const localConsoleErrors = readConsoleErrors
  * for the journeys built on it — but every caller of `pass` had to hand-roll
  * the assert-then-record wrapper, which is why `add` exists now.
  */
+/**
+ * The colour a pixel ACTUALLY RENDERS AS, read back out of a real screenshot.
+ *
+ * WHY this exists: `getComputedStyle(el).backgroundColor` is not the painted
+ * result, and in this repo it demonstrably lied — it reported a popup as white
+ * for about ten journey runs while a capture of that same element at the same
+ * instant showed it correctly dark. Asserting the token instead fixed the false
+ * alarm but opened a real hole a round-4 judge named: add `background: white`
+ * to the popup and every token check still passes while the thing renders
+ * white. Only the pixels can answer that, so this reads the pixels.
+ *
+ * A 1x1 PNG needs no decoder library. The first pixel of the first scanline is
+ * filter-independent: Sub, Up, Average and Paeth all predict from a left/above
+ * neighbour that does not exist, so every filter reduces to the literal value.
+ */
+export async function sampleRenderedPixel(page, x, y) {
+  const shot = await page.send('Page.captureScreenshot', {
+    format: 'png',
+    clip: { x: Math.round(x), y: Math.round(y), width: 1, height: 1, scale: 1 },
+  })
+  const png = Buffer.from(shot.data, 'base64')
+  let offset = 8
+  let colorType = 6
+  const idat = []
+  while (offset + 8 <= png.length) {
+    const length = png.readUInt32BE(offset)
+    const type = png.toString('ascii', offset + 4, offset + 8)
+    const body = png.subarray(offset + 8, offset + 8 + length)
+    if (type === 'IHDR') colorType = body[9]
+    else if (type === 'IDAT') idat.push(body)
+    else if (type === 'IEND') break
+    offset += 12 + length
+  }
+  const raw = inflateSync(Buffer.concat(idat))
+  return { r: raw[1], g: raw[2], b: raw[3], a: colorType === 6 ? raw[4] : 255 }
+}
+
 export function makeChecklist() {
   const checks = []
   const knownFails = []

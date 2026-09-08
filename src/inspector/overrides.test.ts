@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-	SYSTEMSKETCH_PRIMITIVE_OVERRIDE_META_KEY as KEY,
+	PRIMITIVE_OVERRIDE_META_KEY as KEY,
 	arrowOverrideDisplayValues,
 	clearPrimitiveOverride,
 	geoOverrideDisplayValues,

@@ -548,13 +548,13 @@ async function runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant) {
     await key(semPage, 'Enter', 'Enter')
     await delay(200)
     const withOverride = await getShape(semPage, RECT_ID)
-    checklist.add(`${label}: typing a hex into the Fill picker sets the exact override`, withOverride.meta.systemSketchPrimitiveOverride?.fillColor === '#ff00ff')
+    checklist.add(`${label}: typing a hex into the Fill picker sets the exact override`, withOverride.meta.primitiveOverride?.fillColor === '#ff00ff')
     await reveal(semPage, '[data-testid="inspector-defaultswatch-color-green"]')
     await clickElement(semPage, '[data-testid="inspector-defaultswatch-color-green"]')
     await delay(200)
     const afterSwatch = await getShape(semPage, RECT_ID)
     checklist.add(`${label}: a default swatch writes the named colour (${afterSwatch.props.color})`, afterSwatch.props.color === 'green')
-    checklist.add(`${label}: a default swatch clears the exact fillColor override`, afterSwatch.meta.systemSketchPrimitiveOverride?.fillColor === undefined)
+    checklist.add(`${label}: a default swatch clears the exact fillColor override`, afterSwatch.meta.primitiveOverride?.fillColor === undefined)
   }
 
   // The weight control writes the rung and, via Exact, the px override.
@@ -569,7 +569,7 @@ async function runFigmaAnatomyChecks(cdpPort, previewPort, checklist, variant) {
     await key(semPage, 'Enter', 'Enter')
     await delay(150)
     const exact = await getShape(semPage, RECT_ID)
-    checklist.add(`${label}: Exact… reveals the strokeWidth px override (${exact.meta.systemSketchPrimitiveOverride?.strokeWidth})`, exact.meta.systemSketchPrimitiveOverride?.strokeWidth === 9)
+    checklist.add(`${label}: Exact… reveals the strokeWidth px override (${exact.meta.primitiveOverride?.strokeWidth})`, exact.meta.primitiveOverride?.strokeWidth === 9)
   }
 
   semPage.close()
@@ -1033,16 +1033,16 @@ async function runJudgeRound2Checks(cdpPort, previewPort, checklist) {
     await key(page, 'Enter', 'Enter')
     await delay(200)
     const withOverride = await getShape(page, RECT_ID)
-    checklist.add('an exact override is set before the default-swatch check', withOverride.meta.systemSketchPrimitiveOverride?.fillColor === '#ff00ff')
+    checklist.add('an exact override is set before the default-swatch check', withOverride.meta.primitiveOverride?.fillColor === '#ff00ff')
     await reveal(page, '[data-testid="inspector-defaultswatch-color-green"]')
     await clickElement(page, '[data-testid="inspector-defaultswatch-color-green"]')
     await delay(200)
     const afterSwatch = await getShape(page, RECT_ID)
-    checklist.add('the default swatch writes the named colour and clears the override in one call', afterSwatch.props.color === 'green' && afterSwatch.meta.systemSketchPrimitiveOverride?.fillColor === undefined)
+    checklist.add('the default swatch writes the named colour and clears the override in one call', afterSwatch.props.color === 'green' && afterSwatch.meta.primitiveOverride?.fillColor === undefined)
     await evaluate(page, 'void window.__lab.editor.undo()')
     await delay(150)
     const undone = await getShape(page, RECT_ID)
-    checklist.add('one undo fully reverts the default-swatch click (colour AND override together)', undone.props.color === withOverride.props.color && undone.meta.systemSketchPrimitiveOverride?.fillColor === withOverride.meta.systemSketchPrimitiveOverride?.fillColor)
+    checklist.add('one undo fully reverts the default-swatch click (colour AND override together)', undone.props.color === withOverride.props.color && undone.meta.primitiveOverride?.fillColor === withOverride.meta.primitiveOverride?.fillColor)
   }
 
   // Auditor #12: V4-V6's own section rhythm matches round 1's measured
@@ -1350,7 +1350,7 @@ async function main() {
         await key(page, 'Enter', 'Enter')
         await delay(150)
         const rounded = await getShape(page, RECT_ID)
-        checklist.add('corner radius > 0 switches to the rounded geo', rounded.props.geo === 'systemsketch-rounded-rect')
+        checklist.add('corner radius > 0 switches to the rounded geo', rounded.props.geo === 'rounded-rect')
         await replaceFieldText(page, '[data-testid="inspector-number-cornerRadius"]', '0')
         await key(page, 'Enter', 'Enter')
         await delay(150)
@@ -1556,7 +1556,7 @@ async function main() {
         await key(page, 'Enter', 'Enter')
         await delay(150)
         const shape = await getShape(page, RECT_ID)
-        checklist.add('labelEdgeMargin commits into the override bag', shape.meta.systemSketchPrimitiveOverride?.labelEdgeMargin === 30)
+        checklist.add('labelEdgeMargin commits into the override bag', shape.meta.primitiveOverride?.labelEdgeMargin === 30)
         checklist.add('labelMinWidth row exists alongside it', (await testIds(page)).has('inspector-number-labelMinWidth'))
         await reveal(page, '[data-testid="inspector-clear-labelEdgeMargin"]')
         await clickElement(page, '[data-testid="inspector-clear-labelEdgeMargin"]')

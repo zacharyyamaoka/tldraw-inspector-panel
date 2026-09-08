@@ -3,7 +3,7 @@
 // mutable module-singleton arrays (EnumStyleProp#addValues in
 // @tldraw/tlschema mutates in place, permanently, for the life of the module
 // graph). configuredUtils.ts's `GeoShapeUtil.configure({ customGeoTypes })`
-// appends 'systemsketch-rounded-rect' to GeoShapeGeoStyle.values the instant
+// appends 'rounded-rect' to GeoShapeGeoStyle.values the instant
 // it is imported — so the only place either enum is observable in its real,
 // unmutated, stock shape is a module graph that has never touched that file.
 // Vitest gives every test file its own module registry by default, which is

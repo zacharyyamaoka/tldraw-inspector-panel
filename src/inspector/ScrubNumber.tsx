@@ -5,7 +5,7 @@
  * src/inspector/ScrubNumber.tsx) — the expression parser, `quantize`, the
  * `auto`-from-engine-value scrub origin, and the one-gesture-one-undo-step
  * gate are all unchanged. Only the skin moved: the donor's own
- * `.systemsketch-inspector__field` / `__scrub` / `__unit` CSS classes are
+ * `.inspector__field` / `__scrub` / `__unit` CSS classes are
  * replaced with Tailwind classes and shadcn's `InputGroup` (this lab's stack
  * has no `primitive-inspector.css` to inherit). `data-testid`s are unchanged
  * so the ported journey (`tests/inspector_smoke.mjs`) finds the same rows.

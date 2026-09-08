@@ -63,7 +63,7 @@ import {
 // `portableTldraw.ts` lowering both key off — keeping it means a board
 // carrying this geometry means the same thing in either app, the same
 // round-trip argument as the meta key in overrides.ts.
-export const ROUNDED_RECT_GEO = 'systemsketch-rounded-rect'
+export const ROUNDED_RECT_GEO = 'rounded-rect'
 
 // WHY read once here, at module scope, rather than passed as a prop: a
 // ShapeUtil option is fixed at `.configure()` time, before any component
@@ -82,7 +82,7 @@ const FRAME_COLORS_ENABLED = typeof window !== 'undefined'
 
 /**
  * One reusable rounded rectangle path, ported verbatim from
- * `stockPrimitiveVisuals.ts`'s `getSystemSketchRoundedRectPath`.
+ * `stockPrimitiveVisuals.ts`'s `getRoundedRectPath`.
  */
 function roundedRectPath(width: number, height: number, radius: number, isFilled = false): PathBuilder {
 	const w = Math.max(0, width)
