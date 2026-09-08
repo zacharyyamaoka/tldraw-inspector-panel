@@ -4,10 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 5180 --strictPort",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:unit": "vitest run",
+    "test:pixels": "node tests/stock_pixels.mjs",
+    "check": "tsc -b && vitest run && node tests/stock_pixels.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
