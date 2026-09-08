@@ -14,7 +14,8 @@
         "@base-ui/react@1.8.0",
         "react-colorful",
         "cn",
-        "lucide-react"
+        "lucide-react",
+        "@tldraw/assets@5.3.2"
       ],
       "registryDependencies": [
         "button",
@@ -24,6 +25,7 @@
         "input-group",
         "popover",
         "scroll-area",
+        "select",
         "separator",
         "switch",
         "tabs",
@@ -106,6 +108,21 @@
           "path": "src/inspector/themeStorage.ts",
           "type": "registry:file",
           "target": "~/src/inspector/themeStorage.ts"
+        },
+        {
+          "path": "src/inspector/variants/theme.ts",
+          "type": "registry:file",
+          "target": "~/src/inspector/variants/theme.ts"
+        },
+        {
+          "path": "src/inspector/variants/kit.tsx",
+          "type": "registry:file",
+          "target": "~/src/inspector/variants/kit.tsx"
+        },
+        {
+          "path": "src/inspector/variants/tldrawIcons.tsx",
+          "type": "registry:file",
+          "target": "~/src/inspector/variants/tldrawIcons.tsx"
         }
       ],
       "css": {

@@ -92,9 +92,18 @@ describe('registry.json (tldraw-inspector item)', () => {
   })
 
   it('every listed file carries an explicit target under src/inspector/', () => {
+    // WHY one optional subdirectory level, not just `[^/]+`: this rule
+    // predates the variants babble's own `src/inspector/variants/` folder
+    // (kit.tsx/theme.ts/tldrawIcons.tsx — see docs/log.md's variants entry),
+    // which the task that added it explicitly asked for as its OWN
+    // subdirectory. The registry's real requirement is "installs somewhere
+    // under src/inspector/", not "installs flat" — nothing in shadcn's own
+    // registry-item spec requires a flat target, and forcing these three
+    // files flat would mean renaming them away from the folder Inspector.tsx
+    // itself imports them from.
     for (const file of item.files) {
       expect(file.type, `${file.path} should be registry:file`).toBe('registry:file')
-      expect(file.target, `${file.path} has no target`).toMatch(/^~\/src\/inspector\/[^/]+$/)
+      expect(file.target, `${file.path} has no target`).toMatch(/^~\/src\/inspector\/([^/]+\/)?[^/]+$/)
     }
   })
 
