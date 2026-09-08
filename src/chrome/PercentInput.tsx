@@ -23,16 +23,32 @@ export function PercentInput({ value, onCommit, testId, style }: {
 	testId: string
 	style?: React.CSSProperties
 }) {
-	const [draft, setDraft] = useState<string | null>(null)
+	// The draft lives in a REF as well as state, and `commit` reads the ref.
+	//
+	// WHY: `onKeyDown` for Escape used to clear the draft with `setDraft(null)`
+	// and then call `blur()`. State updates are not synchronous, so the ensuing
+	// `onBlur` still closed over the PRE-CLEAR draft and committed it — Escape
+	// saved the value it was supposed to abandon. Enter had the same shape,
+	// committing once directly and again via blur. A ref updates immediately, so
+	// there is exactly one commit path and Escape genuinely cancels.
+	const draftRef = useRef<string | null>(null)
+	const [isEditing, setIsEditing] = useState(false)
 	const ref = useRef<HTMLInputElement | null>(null)
+
+	const setDraft = (next: string | null) => {
+		draftRef.current = next
+		setIsEditing(next !== null)
+	}
 
 	// Follow the store while NOT editing — a slider drag has to move the number,
 	// but must not yank a half-typed value out from under the keyboard.
-	useEffect(() => { if (draft === null && ref.current) ref.current.value = String(value) }, [value, draft])
+	useEffect(() => { if (!isEditing && ref.current) ref.current.value = String(value) }, [value, isEditing])
 
 	const commit = () => {
-		const raw = draft
+		const raw = draftRef.current
 		setDraft(null)
+		// Nothing uncommitted — an Escape already cleared it, or this is the blur
+		// that follows an Enter which already committed.
 		if (raw === null) return
 		const parsed = Number(raw.trim())
 		if (!Number.isFinite(parsed) || raw.trim() === '') {
@@ -61,6 +77,8 @@ export function PercentInput({ value, onCommit, testId, style }: {
 				if (event.key === 'Enter') { event.preventDefault(); commit(); ref.current?.blur() }
 				if (event.key === 'Escape') {
 					event.preventDefault()
+					// Clear the ref FIRST: the blur below runs `commit`, which must
+					// find nothing to save.
 					setDraft(null)
 					if (ref.current) ref.current.value = String(value)
 					ref.current?.blur()
