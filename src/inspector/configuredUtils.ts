@@ -31,6 +31,7 @@
 import {
 	ArrowShapeUtil,
 	DrawShapeUtil,
+	FrameShapeUtil,
 	GeoShapeUtil,
 	HighlightShapeUtil,
 	LineShapeUtil,
@@ -105,7 +106,18 @@ const DEFAULT_FILL_COLOR_NAMES = {
 } as const
 
 function defaultGeoFillColor(shape: TLGeoShape, colors: TLThemeColors): string | undefined {
-	const { color, fill } = shape.props
+	return defaultFillColorFor(shape.props, colors)
+}
+
+// WHY shared with arrow rather than re-derived: ArrowShapeUtil.tsx's own
+// getDefaultDisplayValues computes fillColor with the exact same three-way
+// branch over the same `color`/`fill` props — tldraw just repeats the formula
+// per shape rather than exporting it once.
+function defaultFillColorFor(
+	props: { color: string; fill: string },
+	colors: TLThemeColors,
+): string | undefined {
+	const { color, fill } = props
 	if (fill === 'none') return undefined
 	if (fill === 'semi') return colors.solid
 	const variant = DEFAULT_FILL_COLOR_NAMES[fill as keyof typeof DEFAULT_FILL_COLOR_NAMES]
@@ -126,7 +138,15 @@ const ConfiguredGeoShapeUtil = GeoShapeUtil.configure({
 })
 
 const ConfiguredArrowShapeUtil = ArrowShapeUtil.configure({
-	getCustomDisplayValues: (_editor, shape) => arrowOverrideDisplayValues(shape),
+	// WHY a resolvedFill arg here, added alongside the census sweep: the
+	// `fillColor` paint row already applied to arrows (HAS_FILL sees their
+	// `fill` prop) and wrote real meta, but nothing here ever read it back —
+	// arrowOverrideDisplayValues never returned a `fillColor` key, so the
+	// merge in `getDisplayValues` always fell through to the untouched stock
+	// default. A real "control that does nothing" bug, not a new field: fixed
+	// the same way geo's fillOpacity-with-no-fillColor case already is.
+	getCustomDisplayValues: (_editor, shape, theme, colorMode) =>
+		arrowOverrideDisplayValues(shape, defaultFillColorFor(shape.props, theme.colors[colorMode])),
 })
 
 const ConfiguredTextShapeUtil = TextShapeUtil.configure({
@@ -149,12 +169,27 @@ const ConfiguredHighlightShapeUtil = HighlightShapeUtil.configure({
 	getCustomDisplayValues: (_editor, shape) => highlightOverrideDisplayValues(shape),
 })
 
+// WHY this one carries no `getCustomDisplayValues` at all: a frame's colour
+// paint is not a `meta` override — it is the stock `showColorsFillColor`/
+// `showColorsHeadingFillColor`/etc. display values, which tldraw already
+// computes from `shape.props.color` once it knows to look. `showColors:
+// false` is the actual default (`FrameShapeUtil.tsx`'s own options) — turned
+// on, `props.color` (present in every frame record already, per
+// `TLFrameShape.ts`'s migration, but registered only as a plain validator,
+// not a real StyleProp) becomes a genuine `DefaultColorStyle` StyleProp, so
+// `editor.styleProps.frame` starts carrying it and the frame's own colour
+// paints instead of the hard-coded black default. See `inspectorModel.ts`'s
+// `styleReaches` — the seam the Colour row now checks before offering itself
+// on a frame, so the stock route (no configure call) keeps withholding it
+// honestly instead of writing a prop that changes nothing.
+const ConfiguredFrameShapeUtil = FrameShapeUtil.configure({ showColors: true })
+
 // WHY `withPrimitiveOverrides` on geo/arrow/text/note but not line/draw/highlight:
 // it wraps `component()` to switch off tldraw's label halo (`textOutline`), and
 // only shapes that can carry a label have one to switch off — ported unchanged
 // from the donor's own grouping in stockPrimitiveVisuals.ts/excalidrawInterop.ts/
 // systemSketchArrow.tsx.
-const REPLACED_TYPES = new Set(['geo', 'arrow', 'text', 'line', 'draw', 'note', 'highlight'])
+const REPLACED_TYPES = new Set(['geo', 'arrow', 'text', 'line', 'draw', 'note', 'highlight', 'frame'])
 
 /**
  * The seven stock utils this lab configures, plus every other stock util
@@ -172,5 +207,10 @@ export const CONFIGURED_SHAPE_UTILS: TLAnyShapeUtilConstructor[] = [
 		withPrimitiveOverrides(ConfiguredNoteShapeUtil),
 		ConfiguredHighlightShapeUtil,
 	].map(markResolvesPrimitiveOverrides) as TLAnyShapeUtilConstructor[],
+	// Not branded with `markResolvesPrimitiveOverrides`: frame carries no
+	// `meta` override at all, `paintReaches` is not what gates its Colour row,
+	// and `withPrimitiveOverrides` has nothing to wrap (no label halo either —
+	// a frame's own name is not a `richText` label).
+	ConfiguredFrameShapeUtil as unknown as TLAnyShapeUtilConstructor,
 	...defaultShapeUtils.filter((util) => !REPLACED_TYPES.has(util.type)),
 ]

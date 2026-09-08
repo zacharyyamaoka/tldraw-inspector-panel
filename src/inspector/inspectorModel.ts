@@ -167,6 +167,10 @@ export interface InspectorControl {
 	 * not actually painting with.
 	 */
 	unset?: boolean
+	/** True when the engine derives this value and nothing here can change
+	 *  it — `growY`, so far. Still drawn (never dropped): the whole point is
+	 *  showing the number tldraw computed, which a hidden row cannot. */
+	disabled?: boolean
 }
 
 export interface InspectorGroup {
@@ -237,6 +241,31 @@ function resizesItsOwnBox(shape: TLShape, editor: Editor): boolean {
 function paintReaches(shape: TLShape, editor: Editor): boolean {
 	try {
 		return shapePaintResolvesOverrides(editor.getShapeUtil(shape))
+	} catch {
+		return false
+	}
+}
+
+/**
+ * Does THIS app's configuration actually register `style` as a StyleProp for
+ * `shape`'s type?
+ *
+ * WHY a frame needs this and `hasProp` is not enough: `props.color` exists on
+ * every frame record unconditionally (`TLFrameShape.ts`'s own migration
+ * defaults it to `'black'`), but tldraw registers it as a plain validator, not
+ * a real `DefaultColorStyle` StyleProp, unless `FrameShapeUtil.configure({
+ * showColors: true })` has run — "because shape colors are an option, we
+ * don't want them to be picked up by the editor as a style prop by default"
+ * (tlschema's own comment). `editor.styleProps[type]` is the engine's own
+ * record of which props are wired that way; reading it, rather than hard-
+ * coding "not on a frame" the way this row used to, is what lets the stock
+ * route (no configure call — see `configuredUtils.ts`) keep withholding the
+ * row honestly instead of writing a prop that changes nothing, the same
+ * shape of gate `paintReaches` already is for the `meta` seam.
+ */
+function styleReaches(shape: TLShape, editor: Editor, style: EnumStyleProp<string>): boolean {
+	try {
+		return editor.styleProps[shape.type]?.has(style) ?? false
 	} catch {
 		return false
 	}
@@ -334,6 +363,8 @@ interface FieldSpec {
 	paired?: boolean
 	glyph?: string
 	fallback?: number
+	/** Engine-derived, read-only — see `InspectorControl.disabled`. */
+	disabled?: boolean
 	/** Which shapes this row is meaningful for. A row nothing claims is dropped
 	 *  rather than shown inert — a control that does nothing is a lie. Some
 	 *  answers need the editor (what a shape's util does on resize). */
@@ -604,6 +635,21 @@ const FIELDS: FieldSpec[] = [
 			})))
 		},
 	},
+	// M3: an ordinary `url` prop on six record types (geo, note, image,
+	// bookmark, embed, video) — the click-through link the stock UI sets
+	// through a link icon in the hover toolbar, never through the style
+	// panel. One row, `hasProp` alone decides where it applies.
+	propField('url', 'Link', 'layer', 'url', 'text', {
+		hint: 'The click-through URL. Stock tldraw sets this via the hover toolbar, never a style row.',
+	}),
+	{
+		id: 'growY', label: 'Grown height', group: 'layer', kind: 'number', source: 'prop',
+		unit: 'px', disabled: true,
+		hint: 'tldraw derives this from the label spilling past the shape’s own height — read-only.',
+		applies: (shape) => typeof propOf(shape, 'growY') === 'number',
+		read: (shape) => round(propOf(shape, 'growY') as number),
+		write: () => {},
+	},
 
 	/* ---------------------------------------------------------------- shape */
 	styleField('geo', 'Geometry', 'shape', GeoShapeGeoStyle as EnumStyleProp<string>, 'geo', {
@@ -699,6 +745,42 @@ const FIELDS: FieldSpec[] = [
 	propField('isClosed', 'Closed', 'shape', 'isClosed', 'toggle', {
 		hint: 'A closed freehand stroke takes a fill.',
 	}),
+	// draw and highlight both carry it — set from pressure at draw time
+	// (tldraw checks the first two points' `z`), editable after the fact.
+	propField('isPen', 'Pen input', 'shape', 'isPen', 'toggle', {
+		hint: 'Set automatically from pressure at draw time (tldraw checks the first two points); editable after the fact.',
+	}),
+	// M3: draw and highlight resize through a PER-AXIS scale (`resizeShape`
+	// multiplies `props.scaleX`/`scaleY` — see `DrawShapeUtil.onResize`), not
+	// through `w`/`h` the way every other shape does; neither prop exists on
+	// their schemas at all. Negative values are how tldraw itself represents
+	// a flip on these two shapes, so the row allows them rather than clamping
+	// at 0 the way `scale` (a magnitude, never a sign) does.
+	{
+		id: 'scaleX', label: 'Scale X', group: 'shape', kind: 'number', source: 'prop',
+		min: -10, max: 10, step: 0.05,
+		caption: 'Draw scale', paired: true, glyph: 'x',
+		hint: 'Per-axis resize factor for a freehand stroke or highlighter — negative flips it.',
+		applies: (shape) => typeof propOf(shape, 'scaleX') === 'number',
+		read: (shape) => round(propOf(shape, 'scaleX') as number, 2),
+		write: (editor, shapes, value) => {
+			updateShapes(editor, shapes.map((shape) => ({
+				id: shape.id, type: shape.type, props: { scaleX: Number(value) },
+			})))
+		},
+	},
+	{
+		id: 'scaleY', label: 'Scale Y', group: 'shape', kind: 'number', source: 'prop',
+		min: -10, max: 10, step: 0.05,
+		caption: 'Draw scale', paired: true, glyph: 'y',
+		applies: (shape) => typeof propOf(shape, 'scaleY') === 'number',
+		read: (shape) => round(propOf(shape, 'scaleY') as number, 2),
+		write: (editor, shapes, value) => {
+			updateShapes(editor, shapes.map((shape) => ({
+				id: shape.id, type: shape.type, props: { scaleY: Number(value) },
+			})))
+		},
+	},
 
 	/* ----------------------------------------------------------------- fill */
 	styleField('fill', 'Fill style', 'fill', DefaultFillStyle as EnumStyleProp<string>, 'fill', {
@@ -707,13 +789,17 @@ const FIELDS: FieldSpec[] = [
 	styleField('color', 'Colour', 'fill', DefaultColorStyle as EnumStyleProp<string>, 'color', {
 		kind: 'swatches',
 		options: (editor) => paletteOptions(editor),
-		// WHY a frame is excluded even though it stores `color`: tldraw
-		// deliberately does NOT register a frame's colour as a StyleProp unless
-		// `FrameShapeUtil.configure` turns `showColors` on ("we don't want them
-		// to be picked up by the editor as a style prop by default" —
-		// TLFrameShape.ts), and `setStyleForSelectedShapes` silently skips a
-		// prop with no style key. The row would be a swatch that does nothing.
-		applies: (shape) => shape.type !== 'frame' && hasProp(shape, 'color'),
+		// M3: was `shape.type !== 'frame' && hasProp(shape, 'color')` — a frame's
+		// `color` prop exists unconditionally, so that hard-coded exclusion was
+		// standing in for the real question. `styleReaches` asks the engine
+		// instead: on the chrome route `configuredUtils.ts` now calls
+		// `FrameShapeUtil.configure({ showColors: true })`, which registers
+		// `color` as a genuine StyleProp for `frame` too — so this row now
+		// reaches a frame's own `showColorsFillColor`/`showColorsStrokeColor`/
+		// heading variants. The stock route never configures it, so
+		// `editor.styleProps.frame` stays empty there and the row keeps
+		// withholding itself, honestly, exactly as before.
+		applies: (shape, editor) => styleReaches(shape, editor, DefaultColorStyle as EnumStyleProp<string>),
 	}),
 	paintField('fillColor', 'Fill', 'fill', 'fillColor', 'color', HAS_FILL, {
 		hint: 'Any CSS colour, painted through the engine’s own display-value seam.',
@@ -722,6 +808,15 @@ const FIELDS: FieldSpec[] = [
 		min: 0, max: 1, step: 0.01,
 		caption: 'Exact fill', paired: true, glyph: 'opacity', fallback: 1,
 		hint: 'Transparency for the interior alone — the outline and label stay opaque.',
+	}),
+	// M3: geo, draw and arrow all declare this — the flat colour tldraw's own
+	// `PatternFill` paints instead of the diagonal-line pattern once you're
+	// zoomed out far enough (effective zoom <= 0.18) that the lines would
+	// alias into noise. Gated on `fill === 'pattern'`: at any other fill style
+	// nothing ever reads it, and the row would write meta that paints nothing.
+	paintField('patternFillFallbackColor', 'Pattern fallback', 'fill', 'patternFillFallbackColor', 'color',
+		(shape) => HAS_FILL(shape) && propOf(shape, 'fill') === 'pattern', {
+		hint: 'The flat colour painted in place of the diagonal pattern once zoomed far enough out that the lines would alias.',
 	}),
 
 	/* --------------------------------------------------------------- stroke */
@@ -796,6 +891,20 @@ const FIELDS: FieldSpec[] = [
 	paintField('labelPadding', 'Label pad', 'label', 'labelPadding', 'number', (shape) => shape.type === 'geo' || shape.type === 'note' || shape.type === 'arrow', {
 		min: 0, max: 48, step: 1, unit: 'px',
 		caption: 'Exact type', paired: true, glyph: 'padding', fallback: 16,
+	}),
+	// M3, geo only: the two GeoShapeUtilDisplayValues keys the census found
+	// cheap to reach. `labelEdgeMargin` is the margin between the label's own
+	// edge and the shape's edge (tldraw hard-codes 8); `labelMinWidth` is the
+	// width GEO_SHAPE_MIN_WIDTHS[size] reserves for the label before it wraps
+	// harder than the size rung would otherwise force.
+	paintField('labelEdgeMargin', 'Label edge margin', 'label', 'labelEdgeMargin', 'number', (shape) => shape.type === 'geo', {
+		min: 0, max: 64, step: 1, unit: 'px',
+		caption: 'Label fit', paired: true, glyph: 'padding', fallback: 8,
+	}),
+	paintField('labelMinWidth', 'Label min width', 'label', 'labelMinWidth', 'number', (shape) => shape.type === 'geo', {
+		min: 0, max: 400, step: 1, unit: 'px',
+		caption: 'Label fit', paired: true, glyph: 'w', fallback: 32,
+		hint: 'GEO_SHAPE_MIN_WIDTHS[size] — the width tldraw reserves before the label wraps harder.',
 	}),
 	// WHY text-only: `labelFontWeight`/`labelFontStyle` appear in tldraw's whole
 	// shipped renderer at their two DECLARATION sites and nowhere else — neither
@@ -944,6 +1053,14 @@ const FIELDS: FieldSpec[] = [
 	 * zoomed far out. At any working zoom the rows wrote meta, lit the overridden
 	 * dot, and changed nothing a person could see. They come back the day the
 	 * engine paints the ring at ordinary zoom.
+	 *
+	 * M3 re-confirmed this against 5.3.2's own `NoteShapeUtil.tsx` (still
+	 * `hideShadows ? borderBottom(...) : boxShadow(...)`) rather than adding the
+	 * two rows the brief listed: `noteBorderWidth`/`noteBorderColor` already
+	 * exist on `PrimitiveOverride` and both `*OverrideDisplayValues` keys they'd
+	 * feed are real, but the row would still be inert at ordinary zoom — the
+	 * exact failure this comment exists to name. Documented unreached in
+	 * `displayValueCensus.ts`, not wired.
 	 */
 
 	/* ------------------------------------------------------------ highlight */
@@ -970,6 +1087,15 @@ const FIELDS: FieldSpec[] = [
 			})))
 		},
 	},
+
+	/* ---------------------------------------------------------------- media */
+	propField('altText', 'Alt text', 'media', 'altText', 'text', {
+		hint: 'Accessibility description. tldraw stores it; no stock control sets it.',
+	}),
+	// NOT OFFERED, image: `crop` is a rect (x/y/w/h into the source asset,
+	// stock tldraw's own crop tool already edits it visually) — a numeric or
+	// text row would be a worse editor than the one that exists, and building
+	// a rect editor is out of scope for this milestone.
 ]
 
 const GROUP_LABELS: Record<string, string> = {
@@ -982,9 +1108,13 @@ const GROUP_LABELS: Record<string, string> = {
 	note: 'Sticky',
 	highlight: 'Highlighter',
 	frame: 'Frame',
+	// M3: image/video have no other row at all (their DisplayValues interfaces
+	// are empty — nothing to paint-override), so `altText` gets its own group
+	// rather than folding into "Shape", which nothing else here shares with it.
+	media: 'Media',
 }
 
-const GROUP_ORDER = ['layer', 'shape', 'fill', 'stroke', 'label', 'arrow', 'note', 'highlight', 'frame']
+const GROUP_ORDER = ['layer', 'shape', 'fill', 'stroke', 'label', 'arrow', 'note', 'highlight', 'frame', 'media']
 
 const FIELDS_BY_ID = new Map(FIELDS.map((field) => [field.id, field]))
 
@@ -1041,6 +1171,7 @@ export function getPrimitiveInspectorModel(editor: Editor): PrimitiveInspectorMo
 			...(field.paired ? { paired: true as const } : {}),
 			...(field.glyph ? { glyph: field.glyph } : {}),
 			...(field.fallback !== undefined ? { fallback: field.fallback } : {}),
+			...(field.disabled ? { disabled: true as const } : {}),
 			...(field.hint ? { hint: field.hint } : {}),
 			...(overridden ? { overridden } : {}),
 		}

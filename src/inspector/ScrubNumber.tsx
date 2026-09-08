@@ -61,6 +61,10 @@ export interface ScrubNumberProps {
 	label: string
 	testId: string
 	title?: string
+	/** tldraw derives the value shown; the field is display-only. Still
+	 *  rendered (never dropped) so its number stays visible and comparable
+	 *  with every other row — `growY` is the first field to need this. */
+	disabled?: boolean
 	/** `gestureStart` is false for every frame of a drag after the first, so one
 	 *  scrub is one undo step. */
 	onChange(value: number, gestureStart: boolean): void
@@ -166,6 +170,7 @@ export function ScrubNumber({
 	label,
 	testId,
 	title,
+	disabled,
 	onChange,
 }: ScrubNumberProps) {
 	// A scrub emits a value every couple of pixels of travel. The first marks
@@ -201,6 +206,7 @@ export function ScrubNumber({
 			min={min}
 			max={max}
 			step={step}
+			disabled={disabled}
 			// Figma's multipliers. Base UI applies them to the scrub as well as to
 			// the arrow keys, and reads them live, so shift mid-drag goes coarse.
 			largeStep={step * 10}
@@ -217,7 +223,7 @@ export function ScrubNumber({
 			onValueCommitted={() => { scrubbing.current = false }}
 			render={
 				<InputGroup
-					className={cn('h-7', unset && 'opacity-60')}
+					className={cn('h-7', (unset || disabled) && 'opacity-60')}
 					data-unset={unset ? 'true' : undefined}
 				/>
 			}

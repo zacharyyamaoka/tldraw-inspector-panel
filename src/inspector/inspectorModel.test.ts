@@ -8,7 +8,7 @@
  * `tests/primitive_inspector_smoke.mjs`.
  */
 import { describe, expect, it } from 'vitest'
-import type { Editor, TLShape } from 'tldraw'
+import { DefaultColorStyle, type Editor, type TLShape } from 'tldraw'
 
 import {
 	applyPrimitiveInspectorControl,
@@ -88,6 +88,43 @@ function arrow(id: string, props: Record<string, unknown> = {}): FakeShape {
 	}
 }
 
+function draw(id: string, props: Record<string, unknown> = {}): FakeShape {
+	return {
+		id: `shape:${id}`, type: 'draw', rotation: 0, opacity: 1, isLocked: false, meta: {},
+		props: {
+			color: 'black', fill: 'none', dash: 'draw', size: 'm',
+			segments: [], isComplete: true, isClosed: false, isPen: false,
+			scale: 1, scaleX: 1, scaleY: 1,
+			...props,
+		},
+	}
+}
+
+function highlight(id: string, props: Record<string, unknown> = {}): FakeShape {
+	return {
+		id: `shape:${id}`, type: 'highlight', rotation: 0, opacity: 1, isLocked: false, meta: {},
+		props: {
+			color: 'yellow', size: 'm', segments: [], isComplete: true, isPen: false,
+			scaleX: 1, scaleY: 1,
+			...props,
+		},
+	}
+}
+
+function image(id: string, props: Record<string, unknown> = {}): FakeShape {
+	return {
+		id: `shape:${id}`, type: 'image', rotation: 0, opacity: 1, isLocked: false, meta: {},
+		props: { w: 200, h: 150, url: '', crop: null, flipX: false, flipY: false, altText: '', ...props },
+	}
+}
+
+function bookmark(id: string, props: Record<string, unknown> = {}): FakeShape {
+	return {
+		id: `shape:${id}`, type: 'bookmark', rotation: 0, opacity: 1, isLocked: false, meta: {},
+		props: { w: 300, h: 320, url: '', ...props },
+	}
+}
+
 interface FakeEditorCalls {
 	nextStyles: Array<[string, string]>
 	updates: Array<Record<string, unknown>>
@@ -117,7 +154,26 @@ function fakeEditor(shapes: FakeShape[], { paintSeam = true }: { paintSeam?: boo
 		isAspectRatioLocked() { return this.shape.type === 'text' }
 	}
 	if (paintSeam) markResolvesPrimitiveOverrides(FakePaintUtil)
+	// WHY keyed the same as `paintSeam`: in the real app the two toggle
+	// together — `configuredUtils.ts` calls `FrameShapeUtil.configure({
+	// showColors: true })` on exactly the same route (chrome, not stock) that
+	// installs the paint seam — so one fixture flag stands in for both without
+	// pretending they are the same mechanism (see `styleReaches`'s own WHY:
+	// frame's colour reaches through `editor.styleProps`, never through
+	// `meta`). Every other type here always carries `color` as a real
+	// StyleProp, exactly as stock tldraw does regardless of this app.
+	const styleProps: Record<string, Map<{ id: string }, string>> = {
+		geo: new Map([[DefaultColorStyle, 'color']]),
+		arrow: new Map([[DefaultColorStyle, 'color']]),
+		note: new Map([[DefaultColorStyle, 'color']]),
+		line: new Map([[DefaultColorStyle, 'color']]),
+		draw: new Map([[DefaultColorStyle, 'color']]),
+		highlight: new Map([[DefaultColorStyle, 'color']]),
+		text: new Map([[DefaultColorStyle, 'color']]),
+		frame: paintSeam ? new Map([[DefaultColorStyle, 'color']]) : new Map(),
+	}
 	const editor = {
+		styleProps,
 		getSelectedShapes: () => shapes as unknown as TLShape[],
 		getShape: (id: string) => shapes.find((shape) => shape.id === id) as unknown as TLShape | undefined,
 		// The real `Editor.isShapeOrAncestorLocked` also walks the parent chain;
@@ -313,12 +369,20 @@ describe('getPrimitiveInspectorModel', () => {
 })
 
 describe('rows that would have been inert', () => {
-	it('drops the palette on a frame, whose colour tldraw does not register as a style', () => {
-		// `setStyleForSelectedShapes` silently skips a prop with no style key, so
-		// the swatch row was a control that could never do anything.
-		const ids = controlIds(getPrimitiveInspectorModel(fakeEditor([frame('f')]).editor)!)
-		expect(ids).not.toContain('color')
-		expect(ids).toContain('frameName')
+	// M3: was "drops the palette on a frame, whose colour tldraw does not
+	// register as a style" — true on stock tldraw, but this app now calls
+	// `FrameShapeUtil.configure({ showColors: true })` (`configuredUtils.ts`)
+	// on the same route that installs the paint seam, which registers `color`
+	// as a real StyleProp for `frame` too. `styleReaches` asks the engine
+	// (`editor.styleProps`) rather than hard-coding the exclusion, so the two
+	// routes stay honest without a frame-specific special case here.
+	it('offers the palette on a frame once showColors is configured, withholds it on the stock route', () => {
+		const configured = controlIds(getPrimitiveInspectorModel(fakeEditor([frame('f')]).editor)!)
+		expect(configured).toContain('color')
+		expect(configured).toContain('frameName')
+		const stock = controlIds(getPrimitiveInspectorModel(fakeEditor([frame('f')], { paintSeam: false }).editor)!)
+		expect(stock).not.toContain('color')
+		expect(stock).toContain('frameName')
 	})
 
 	it('drops the halo row on a sticky, which never had one', () => {
@@ -590,5 +654,69 @@ describe('primitiveInspectorKey', () => {
 			getPrimitiveInspectorModel(fakeEditor([geo('a', { fill: 'solid' })]).editor),
 		)
 		expect(before).not.toBe(after)
+	})
+})
+
+describe('M3: display values the census found cheap to reach', () => {
+	it('offers the pattern fallback colour only when fill is actually pattern', () => {
+		const solid = controlIds(getPrimitiveInspectorModel(fakeEditor([geo('a', { fill: 'solid' })]).editor)!)
+		expect(solid).not.toContain('patternFillFallbackColor')
+		const pattern = controlIds(getPrimitiveInspectorModel(fakeEditor([geo('a', { fill: 'pattern' })]).editor)!)
+		expect(pattern).toContain('patternFillFallbackColor')
+	})
+
+	it('writes the pattern fallback colour into the same override bag as every other paint field', () => {
+		const shape = geo('a', { fill: 'pattern' })
+		const { editor } = fakeEditor([shape])
+		applyPrimitiveInspectorControl(editor, 'patternFillFallbackColor', '#336699')
+		expect(shape.meta[KEY]).toEqual({ patternFillFallbackColor: '#336699' })
+	})
+
+	it('offers labelEdgeMargin and labelMinWidth on geo only', () => {
+		const geoIds = controlIds(getPrimitiveInspectorModel(fakeEditor([geo('a')]).editor)!)
+		expect(geoIds).toContain('labelEdgeMargin')
+		expect(geoIds).toContain('labelMinWidth')
+		const arrowIds = controlIds(getPrimitiveInspectorModel(fakeEditor([arrow('a')]).editor)!)
+		expect(arrowIds).not.toContain('labelEdgeMargin')
+		expect(arrowIds).not.toContain('labelMinWidth')
+	})
+
+	it('round-trips the click-through url on every record type that has one', () => {
+		for (const shape of [geo('a'), note('n'), image('i'), bookmark('b')]) {
+			const { editor } = fakeEditor([shape])
+			applyPrimitiveInspectorControl(editor, 'url', 'https://example.com')
+			expect(shape.props.url).toBe('https://example.com')
+		}
+	})
+
+	it('reports growY as a disabled, read-only row rather than dropping it', () => {
+		const shape = geo('a', { growY: 12 })
+		const control = find(getPrimitiveInspectorModel(fakeEditor([shape]).editor)!, 'growY')!
+		expect(control.disabled).toBe(true)
+		expect(control.value).toBe(12)
+	})
+
+	it('toggles isPen on draw and highlight, but the row is absent where the prop is not', () => {
+		const strokeShape = draw('d', { isPen: false })
+		const { editor } = fakeEditor([strokeShape])
+		applyPrimitiveInspectorControl(editor, 'isPen', true)
+		expect(strokeShape.props.isPen).toBe(true)
+		expect(controlIds(getPrimitiveInspectorModel(fakeEditor([geo('a')]).editor)!)).not.toContain('isPen')
+	})
+
+	it('reads and writes the per-axis resize scale on draw and highlight, negative flips included', () => {
+		const strokeShape = draw('d', { scaleX: 1, scaleY: 1 })
+		const { editor } = fakeEditor([strokeShape])
+		applyPrimitiveInspectorControl(editor, 'scaleX', -1)
+		expect(strokeShape.props.scaleX).toBe(-1)
+		const glow = highlight('h', { scaleX: 1, scaleY: 1 })
+		expect(controlIds(getPrimitiveInspectorModel(fakeEditor([glow]).editor)!)).toContain('scaleY')
+		expect(controlIds(getPrimitiveInspectorModel(fakeEditor([geo('a')]).editor)!)).not.toContain('scaleX')
+	})
+
+	it('offers alt text on image, in its own Media group, and nowhere else', () => {
+		const model = getPrimitiveInspectorModel(fakeEditor([image('i')]).editor)!
+		expect(model.groups.find((group) => group.id === 'media')?.controls.map((c) => c.id)).toEqual(['altText'])
+		expect(controlIds(getPrimitiveInspectorModel(fakeEditor([geo('a')]).editor)!)).not.toContain('altText')
 	})
 })

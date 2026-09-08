@@ -93,6 +93,16 @@ export interface PrimitiveOverride {
 	/** A highlighter's two passes, which the stock UI fixes at 0.82 / 0.35. */
 	highlightUnderlayOpacity?: number
 	highlightOverlayOpacity?: number
+	/** The flat colour geo/draw/arrow paint instead of the diagonal pattern once
+	 *  zoomed far enough out that the lines would alias into noise (tldraw's own
+	 *  `PatternFill`, effective zoom <= 0.18). Only visible with `fill: 'pattern'`. */
+	patternFillFallbackColor?: string
+	/** A geo label's minimum width before it starts wrapping harder than the
+	 *  shape's own size rung would otherwise force. geo only. */
+	labelMinWidth?: number
+	/** Margin between a geo label's own edge and the shape's edge, in scene px.
+	 *  geo only; tldraw hard-codes 8. */
+	labelEdgeMargin?: number
 }
 
 /** The numeric fields, so a reader can validate them in one place. */
@@ -110,6 +120,8 @@ const NUMERIC_FIELDS = [
 	'arrowLabelRadius',
 	'highlightUnderlayOpacity',
 	'highlightOverlayOpacity',
+	'labelMinWidth',
+	'labelEdgeMargin',
 ] as const
 
 const STRING_FIELDS = [
@@ -120,6 +132,7 @@ const STRING_FIELDS = [
 	'labelFontWeight',
 	'labelFontStyle',
 	'noteBorderColor',
+	'patternFillFallbackColor',
 ] as const
 
 export type PrimitiveOverrideField = keyof PrimitiveOverride
@@ -266,6 +279,7 @@ export function geoOverrideDisplayValues(
 		strokeWidth: width,
 		strokeRoundness: roundness,
 		fillColor: fillPaint(override, resolvedFill),
+		patternFillFallbackColor: override.patternFillFallbackColor,
 		labelColor: override.labelColor,
 		labelFontFamily: override.labelFontFamily,
 		labelFontSize: unscaled(override.labelFontSize, shape),
@@ -273,6 +287,8 @@ export function geoOverrideDisplayValues(
 		labelFontStyle: override.labelFontStyle,
 		labelLineHeight: override.labelLineHeight,
 		labelPadding: unscaled(override.labelPadding, shape),
+		labelMinWidth: unscaled(override.labelMinWidth, shape),
+		labelEdgeMargin: unscaled(override.labelEdgeMargin, shape),
 	})
 }
 
@@ -308,15 +324,28 @@ export function drawOverrideDisplayValues(
 		strokeColor: override.strokeColor,
 		strokeWidth: unscaled(override.strokeWidth, shape),
 		fillColor: fillPaint(override, resolvedFill),
+		patternFillFallbackColor: override.patternFillFallbackColor,
 	})
 }
 
-/** An arrow adds the rounded plate its label sits on. */
-export function arrowOverrideDisplayValues(shape: OverridableShape): Record<string, unknown> {
+/**
+ * An arrow adds the rounded plate its label sits on.
+ *
+ * `resolvedFill` is the shape's own stock fill (see `configuredUtils.ts`'s
+ * `defaultFillColorFor`), so a `fillOpacity`-only override — no `fillColor`
+ * set — composites onto what the arrow would already be painting, the same
+ * correction `geoOverrideDisplayValues` needed.
+ */
+export function arrowOverrideDisplayValues(
+	shape: OverridableShape,
+	resolvedFill?: string,
+): Record<string, unknown> {
 	const override = readPrimitiveOverride(shape)
 	return defined({
 		strokeColor: override.strokeColor,
 		strokeWidth: unscaled(override.strokeWidth, shape),
+		fillColor: fillPaint(override, resolvedFill),
+		patternFillFallbackColor: override.patternFillFallbackColor,
 		labelColor: override.labelColor,
 		labelFontFamily: override.labelFontFamily,
 		labelFontSize: unscaled(override.labelFontSize, shape),
