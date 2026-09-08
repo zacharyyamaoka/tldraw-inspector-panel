@@ -1,6 +1,6 @@
 import { getAssetUrlsByImport } from '@tldraw/assets/imports.vite'
 import { useCallback } from 'react'
-import { Tldraw, type Editor, type TLAnyShapeUtilConstructor, type TLComponents } from 'tldraw'
+import { Tldraw, type Editor, type TLAnyShapeUtilConstructor, type TLComponents, type TLThemes } from 'tldraw'
 import { seedStockBoard } from './seed'
 
 // WHY self-hosted assets (@tldraw/assets/imports.vite) rather than tldraw's default
@@ -20,7 +20,12 @@ declare global {
 // this component from a cold page load, so there is no re-render to react to a
 // change — deciding the seed mode once, the same way in both entries, is what keeps
 // them from being able to drift apart.
-function readSeedMode(): string | null {
+//
+// WHY exported: `App.tsx` needs the same answer to decide whether reading
+// `themeStorage.ts`'s persisted theme is safe (never on a `?seed=` run — see
+// that file's own WHY), and re-parsing `location.search` a second way would
+// be exactly the kind of second answer that can drift from this one.
+export function readSeedMode(): string | null {
   return new URLSearchParams(window.location.search).get('seed')
 }
 
@@ -35,6 +40,16 @@ export interface BoardProps {
    * keeps tldraw's own defaults — no paint seam, no rounded rect.
    */
   shapeUtils?: TLAnyShapeUtilConstructor[]
+  /**
+   * Passed straight through to `<Tldraw themes={...}>`. `undefined` keeps
+   * tldraw's own `DEFAULT_THEME` — no Theme-tab edits, no custom colour
+   * names registered. A caller decides this the same way it decides
+   * `components`/`shapeUtils`: `App.tsx` reads `themeStorage.ts`'s persisted
+   * value on a plain load, `stock.tsx` deliberately never does (see its own
+   * WHY — the whole point of that route is an otherwise-completely-stock
+   * canvas), and `bare.tsx` never touches it at all.
+   */
+  themes?: Partial<TLThemes>
 }
 
 /**
@@ -53,7 +68,7 @@ export interface BoardProps {
  * a mistake a judge caught. Every entry below states its own chrome in full;
  * there is nothing left here for a future entry to half-inherit by accident.
  */
-export function Board({ components, shapeUtils }: BoardProps = {}) {
+export function Board({ components, shapeUtils, themes }: BoardProps = {}) {
   const seedMode = readSeedMode()
 
   const handleMount = useCallback(
@@ -80,6 +95,7 @@ export function Board({ components, shapeUtils }: BoardProps = {}) {
         onMount={handleMount}
         shapeUtils={shapeUtils}
         components={components}
+        themes={themes}
       />
     </div>
   )

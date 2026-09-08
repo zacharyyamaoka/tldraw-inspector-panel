@@ -43,6 +43,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Toggle } from '@/components/ui/toggle'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
@@ -67,11 +68,14 @@ import {
 	type PrimitiveInspectorModel,
 } from './inspectorModel'
 import { ScrubNumber } from './ScrubNumber'
+import { ThemePanel } from './ThemePanel'
 
 /** `CSS.supports` is the only honest oracle for "will the engine paint this" —
  *  the field accepts `rgba(...)`, `transparent` and `color-mix(...)` as well
- *  as hex, so a regex would reject values the engine happily paints. */
-function isColor(value: string): boolean {
+ *  as hex, so a regex would reject values the engine happily paints.
+ *  Exported for `ThemePanel.tsx`'s own colour rows — same validation, same
+ *  reasoning, one function. */
+export function isColor(value: string): boolean {
 	if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function') return true
 	return CSS.supports('color', value)
 }
@@ -321,6 +325,7 @@ function Control({
 					label={control.label}
 					testId={control.id}
 					title={control.hint ?? control.label}
+					disabled={control.disabled}
 					onChange={(value, gestureStart) => set(value, gestureStart)}
 				/>
 			)
@@ -655,7 +660,26 @@ export function Inspector({ isMobile: _isMobile, styles: _styles, children: _chi
 			// rule in app.css for that one.
 			className="pointer-events-auto absolute top-0 right-0 bottom-0 w-[280px] border-l border-border bg-background font-sans text-foreground"
 		>
-			<InspectorPanel editor={editor} />
+			{/* M3: the Inspect dock over one shape's paint (layer 1+2, above) and
+			    the Theme tab over the app-global palette (layer 3, `ThemePanel.tsx`)
+			    are two different questions — "what can THIS shape be" vs. "what
+			    does the app's whole palette resolve to" — so they get two tabs
+			    rather than one more group in the same list. `TabsContent` for the
+			    inactive tab unmounts by default (Base UI's own behaviour), which is
+			    what keeps `InspectorPanel`'s selection-tracking effects from
+			    running while the Theme tab is the one on screen. */}
+			<Tabs defaultValue="inspect" className="h-full gap-0">
+				<TabsList variant="line" className="w-full shrink-0 rounded-none border-b border-border px-1 pt-1">
+					<TabsTrigger value="inspect" data-testid="inspector-tab-inspect">Inspect</TabsTrigger>
+					<TabsTrigger value="theme" data-testid="inspector-tab-theme">Theme</TabsTrigger>
+				</TabsList>
+				<TabsContent value="inspect" className="min-h-0 flex-1">
+					<InspectorPanel editor={editor} />
+				</TabsContent>
+				<TabsContent value="theme" className="min-h-0 flex-1">
+					<ThemePanel editor={editor} />
+				</TabsContent>
+			</Tabs>
 		</div>
 	)
 }

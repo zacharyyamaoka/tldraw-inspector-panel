@@ -1,7 +1,8 @@
-import { Board } from './board/mount'
+import { Board, readSeedMode } from './board/mount'
 import { StockCheckButton } from './compat/StockCheckButton'
 import { CONFIGURED_SHAPE_UTILS } from './inspector/configuredUtils'
 import { Inspector } from './inspector/Inspector'
+import { readStoredThemes } from './inspector/themeStorage'
 
 // WHY dynamically imported behind a query switch, never statically: this is the
 // pixel gate's mutation check (tests/stock_pixels.mjs step 3) — it proves the gate
@@ -26,11 +27,21 @@ if (new URLSearchParams(window.location.search).get('preflight') === '1') {
 // exactly this: every entry states its own chrome in full, so a control only
 // this route wants belongs in this route's own components map. bare.html
 // passes no components at all and stays untouched.
+//
+// WHY `themes` is read here, in the one entry that owns it, rather than
+// inside `Board`: M3's Theme tab is exactly the kind of chrome
+// `components`/`shapeUtils` already model as a per-entry decision — `stock.tsx`
+// deliberately never reads it (an otherwise-completely-stock canvas needs its
+// palette to actually be tldraw's own, unregistered custom colours included),
+// and `bare.tsx` never touches it at all. A `?seed=` run skips it the same way
+// it skips `persistenceKey` inside `Board` — see `themeStorage.ts`.
 export default function App() {
+  const seedMode = readSeedMode()
   return (
     <Board
       components={{ StylePanel: Inspector, SharePanel: StockCheckButton }}
       shapeUtils={CONFIGURED_SHAPE_UTILS}
+      themes={seedMode ? undefined : readStoredThemes()}
     />
   )
 }
