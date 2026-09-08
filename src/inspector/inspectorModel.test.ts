@@ -147,6 +147,10 @@ function fakeEditor(shapes: FakeShape[], { paintSeam = true }: { paintSeam?: boo
 		// which forbids parameter properties as non-erasable syntax. Same
 		// behaviour, just spelled out.
 		private readonly shape: FakeShape
+		// `frameShowColorsOn` reads this straight off the util, the same way the
+		// real `FrameShapeUtil.configure({ showColors })` result carries it —
+		// coupled to `paintSeam` for the same reason `styleProps.frame` below is.
+		options = { showColors: paintSeam }
 		constructor(shape: FakeShape) { this.shape = shape }
 		// tldraw's `TextShapeUtil.isAspectRatioLocked()` returns true
 		// unconditionally, which is what routes a text resize through

@@ -271,6 +271,33 @@ function styleReaches(shape: TLShape, editor: Editor, style: EnumStyleProp<strin
 	}
 }
 
+/**
+ * Frame only: is `showColors` actually on for the util painting this shape,
+ * asked directly rather than inferred.
+ *
+ * WHY on top of `styleReaches` rather than instead of it: `styleReaches`
+ * already answers this correctly today, because `FrameShapeUtil.configure`
+ * only promotes `props.color` to a real `DefaultColorStyle` StyleProp when
+ * `showColors` was true at configure time — but that is a one-hop inference
+ * from a side effect of configuration, not the question itself. `?frames=colors`
+ * (`configuredUtils.ts`) makes `showColors` a runtime-decided default-off
+ * switch, and `tests/compat_smoke.mjs` measuring 83 changed px on a pure-
+ * record board — a frame painting its own colour when nothing asked it to —
+ * is exactly the "control that does nothing is a lie" failure this file's
+ * own rule exists to prevent, just inverted: a row silently changing paint
+ * with no visible control for it. Reading `util.options.showColors` directly
+ * is the belt to `styleReaches`'s suspenders.
+ */
+function frameShowColorsOn(shape: TLShape, editor: Editor): boolean {
+	if (shape.type !== 'frame') return false
+	try {
+		const util = editor.getShapeUtil(shape) as unknown as { options?: { showColors?: boolean } }
+		return util.options?.showColors === true
+	} catch {
+		return false
+	}
+}
+
 /** The app's rounded rectangle, registered through tldraw's `customGeoTypes`. */
 const ROUNDED_RECT_GEO = 'systemsketch-rounded-rect'
 
@@ -792,14 +819,19 @@ const FIELDS: FieldSpec[] = [
 		// M3: was `shape.type !== 'frame' && hasProp(shape, 'color')` — a frame's
 		// `color` prop exists unconditionally, so that hard-coded exclusion was
 		// standing in for the real question. `styleReaches` asks the engine
-		// instead: on the chrome route `configuredUtils.ts` now calls
-		// `FrameShapeUtil.configure({ showColors: true })`, which registers
-		// `color` as a genuine StyleProp for `frame` too — so this row now
-		// reaches a frame's own `showColorsFillColor`/`showColorsStrokeColor`/
-		// heading variants. The stock route never configures it, so
-		// `editor.styleProps.frame` stays empty there and the row keeps
-		// withholding itself, honestly, exactly as before.
-		applies: (shape, editor) => styleReaches(shape, editor, DefaultColorStyle as EnumStyleProp<string>),
+		// instead: `configuredUtils.ts` only calls `FrameShapeUtil.configure({
+		// showColors: true })` when `?frames=colors` opted in (off by default —
+		// see that switch's own WHY), which is what registers `color` as a
+		// genuine StyleProp for `frame`, reaching its `showColorsFillColor`/
+		// `showColorsStrokeColor`/heading variants. `frameShowColorsOn` asks the
+		// SAME question a second, more direct way (reads `util.options.showColors`
+		// straight off the configured util) — belt-and-suspenders after
+		// `tests/compat_smoke.mjs` caught a frame painting its own colour with no
+		// visible control for it, the inverse of "does nothing" but the same rule.
+		// A plain load (switch off, stock route, or `showColors` never configured)
+		// keeps withholding this row, honestly.
+		applies: (shape, editor) => styleReaches(shape, editor, DefaultColorStyle as EnumStyleProp<string>)
+			&& (shape.type !== 'frame' || frameShowColorsOn(shape, editor)),
 	}),
 	paintField('fillColor', 'Fill', 'fill', 'fillColor', 'color', HAS_FILL, {
 		hint: 'Any CSS colour, painted through the engine’s own display-value seam.',

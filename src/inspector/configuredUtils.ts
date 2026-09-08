@@ -65,6 +65,21 @@ import {
 // round-trip argument as the meta key in overrides.ts.
 export const ROUNDED_RECT_GEO = 'systemsketch-rounded-rect'
 
+// WHY read once here, at module scope, rather than passed as a prop: a
+// ShapeUtil option is fixed at `.configure()` time, before any component
+// mounts, so there is no re-render for a prop to react to — the same reason
+// `board/mount.tsx`'s `readSeedMode()` reads `location.search` once rather
+// than in a hook. Off by default: `showColors: true` unconditionally paints
+// every frame differently from stock tldraw even with NO override (the
+// seeded frame is plain `color: 'black'`) — `tests/compat_smoke.mjs`
+// measured this as 83 changed px on an otherwise pure-record board before
+// this switch existed (docs/log.md's "showColors is opt-in" entry). Stock by
+// default is this lab's first rule; a frame's own colour is a real layer-2
+// addition someone opts into with `?frames=colors`, not something a plain
+// load silently paints.
+const FRAME_COLORS_ENABLED = typeof window !== 'undefined'
+	&& new URLSearchParams(window.location.search).get('frames') === 'colors'
+
 /**
  * One reusable rounded rectangle path, ported verbatim from
  * `stockPrimitiveVisuals.ts`'s `getSystemSketchRoundedRectPath`.
@@ -173,16 +188,17 @@ const ConfiguredHighlightShapeUtil = HighlightShapeUtil.configure({
 // paint is not a `meta` override — it is the stock `showColorsFillColor`/
 // `showColorsHeadingFillColor`/etc. display values, which tldraw already
 // computes from `shape.props.color` once it knows to look. `showColors:
-// false` is the actual default (`FrameShapeUtil.tsx`'s own options) — turned
-// on, `props.color` (present in every frame record already, per
+// false` is the actual default (`FrameShapeUtil.tsx`'s own options), and it
+// stays the default here unless `FRAME_COLORS_ENABLED` (above) opts in —
+// turned on, `props.color` (present in every frame record already, per
 // `TLFrameShape.ts`'s migration, but registered only as a plain validator,
 // not a real StyleProp) becomes a genuine `DefaultColorStyle` StyleProp, so
 // `editor.styleProps.frame` starts carrying it and the frame's own colour
 // paints instead of the hard-coded black default. See `inspectorModel.ts`'s
-// `styleReaches` — the seam the Colour row now checks before offering itself
-// on a frame, so the stock route (no configure call) keeps withholding it
-// honestly instead of writing a prop that changes nothing.
-const ConfiguredFrameShapeUtil = FrameShapeUtil.configure({ showColors: true })
+// `styleReaches` and `frameShowColorsOn` — the seams the Colour row checks
+// before offering itself on a frame, so a plain load (switch off) keeps
+// withholding it honestly instead of writing a prop that changes nothing.
+const ConfiguredFrameShapeUtil = FrameShapeUtil.configure({ showColors: FRAME_COLORS_ENABLED })
 
 // WHY `withPrimitiveOverrides` on geo/arrow/text/note but not line/draw/highlight:
 // it wraps `component()` to switch off tldraw's label halo (`textOutline`), and
