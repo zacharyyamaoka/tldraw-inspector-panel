@@ -195,3 +195,126 @@
 [data-slot="sheet-content"] {
   font-family: var(--font-sans);
 }
+
+/* -------------------------------------------------------------------------
+   Inspector variants (docs/log.md's variants entry has the full rationale).
+
+   WHY these override the shadcn TOKENS (`--background`/`--foreground`/…)
+   rather than hand-editing every `bg-background`/`text-foreground` class in
+   Inspector.tsx/ThemePanel.tsx: both files already speak exclusively in
+   those tokens (the M1-M3 milestones built them that way on purpose, to
+   follow `.tl-container`'s own tl-* bridge above), so re-pointing the
+   tokens at a `--v-*` palette one level more specific than `.tl-container`'s
+   own block retheme the WHOLE dock — Inspect tab and Theme tab alike, with
+   zero markup changes — the same reason the M1 bridge itself works. Scoped
+   to `[data-testid="inspector"]` (the one div both tabs mount inside, see
+   Inspector.tsx), never `:root` — a `:root` override would also leak into
+   whatever non-canvas shadcn chrome a later milestone adds outside the dock.
+
+   WHY `--v-*` exists as an indirection instead of writing `--background`
+   directly per variant: `kit.tsx`'s hand-rolled parts (the resize handle,
+   the list-row swatch, the segmented control's `data-[state=on]` background)
+   need colours shadcn's own token set has no name for at all (open-pencil's
+   `panel-field`/`panel-field-hover`/`hover` are three different surfaces
+   where shadcn only has one `accent`) — `--v-*` carries the full open-pencil
+   naming so those parts don't have to invent their own aliases too. */
+[data-testid="inspector"][data-variant='1'],
+[data-testid="inspector"][data-variant='3'] {
+  /* V1 "Verbatim" / V3 "Inline" share one literal palette — open-pencil's
+     own light values (src/app.css in the measured clone). V3's brief only
+     specifies a DENSER LAYOUT, never a second palette, so it inherits V1's
+     rather than inventing an unspecified third one. */
+  --v-panel: #ffffff;
+  --v-panel-secondary: #f7f8fa;
+  --v-field: #f0f1f3;
+  --v-field-hover: #e4e7ea;
+  --v-focus: #2563eb;
+  --v-border: #d8dce3;
+  --v-hover: #eef1f5;
+  --v-accent: #2563eb;
+  --v-surface: #1f2328;
+  --v-muted: #6b7280;
+}
+.tl-theme__dark :is([data-testid="inspector"][data-variant='1'], [data-testid="inspector"][data-variant='3']) {
+  --v-panel: #2a2a2a;
+  --v-panel-secondary: #242424;
+  --v-field: #383838;
+  --v-field-hover: #404040;
+  --v-focus: #3b82f6;
+  --v-border: #3a3a3a;
+  --v-hover: #353535;
+  --v-accent: #3b82f6;
+  --v-surface: #f0f0f0;
+  --v-muted: #888888;
+}
+/* V2 "Canvas-native": no literal hex at all — every role points at the SAME
+   tldraw tokens `.tl-container`'s own bridge already uses above, so this
+   panel repaints exactly when tldraw's own style panel would, in both
+   themes, with no separate dark block (`--tl-color-*` already flips under
+   `.tl-theme__dark`, one level up). `tests/theme_bridge.test.ts` greps every
+   `var(--tl-*)` reference in this file, this block included. */
+[data-testid="inspector"][data-variant='2'] {
+  --v-panel: var(--tl-color-panel);
+  --v-panel-secondary: var(--tl-color-panel-contrast);
+  --v-field: var(--tl-color-low);
+  --v-field-hover: var(--tl-color-low-border);
+  --v-focus: var(--tl-color-focus);
+  --v-border: var(--tl-color-divider);
+  --v-hover: var(--tl-color-hint);
+  --v-accent: var(--tl-color-selected);
+  --v-surface: var(--tl-color-text);
+  --v-muted: var(--tl-color-text-3);
+}
+/* The re-point: every variant feeds its --v-* palette back into the shadcn
+   token names the existing markup already reads. */
+[data-testid="inspector"][data-variant] {
+  --background: var(--v-panel);
+  --foreground: var(--v-surface);
+  --card: var(--v-panel-secondary);
+  --card-foreground: var(--v-surface);
+  --popover: var(--v-panel);
+  --popover-foreground: var(--v-surface);
+  --secondary: var(--v-field);
+  --secondary-foreground: var(--v-surface);
+  --muted: var(--v-field);
+  --muted-foreground: var(--v-muted);
+  --accent: var(--v-hover);
+  --accent-foreground: var(--v-surface);
+  --border: var(--v-border);
+  --input: var(--v-border);
+  --ring: var(--v-focus);
+  --primary: var(--v-accent);
+  --primary-foreground: var(--v-panel);
+}
+
+/* WHY explicit ink on every raw control rather than trusting inheritance:
+   a `<button>`/`<input>` never inherits `color` from an ancestor — the UA
+   stylesheet gives each its own `ButtonText`/`FieldText` system colour,
+   `color-scheme`-dependent — the exact bug `TileGroup`'s own WHY in
+   Inspector.tsx already names for the geometry tiles. Mandatory behaviour
+   #3 in the variants brief generalizes that fix to every control kit.tsx
+   draws: swatch buttons, segment items, list-row buttons, both field kinds. */
+[data-testid="inspector"][data-variant] button,
+[data-testid="inspector"][data-variant] input {
+  color: var(--v-surface);
+}
+
+/* The resize handle (open-pencil's splitter.ts): a 1px divider at rest,
+   accent on hover/drag — `data-active` is set by ResizeHandle in kit.tsx
+   for the duration of a drag so releasing the mouse outside the handle
+   still shows the accent stripe. */
+[data-testid="inspector-resize-handle"] {
+  background: transparent;
+}
+[data-testid="inspector-resize-handle"]:hover::after,
+[data-testid="inspector-resize-handle"][data-active="true"]::after {
+  background: var(--v-accent);
+}
+[data-testid="inspector-resize-handle"]::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--v-border);
+}
