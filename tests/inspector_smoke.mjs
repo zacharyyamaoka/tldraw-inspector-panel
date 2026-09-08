@@ -292,17 +292,31 @@ async function main() {
       }
 
       // Reads the dock's actual painted background, and separately what
-      // `--tl-color-panel` resolves to right now — normalized to the same
+      // `--v-panel` resolves to right now — normalized to the same
       // `rgb(...)` shape by painting it onto a throwaway element, since the
       // custom property can be a raw hex string while `getComputedStyle`
       // always answers in `rgb(...)`.
+      //
+      // WHY `--v-panel`, not `--tl-color-panel` (this checked before the
+      // variants babble): `--tl-color-panel` is only ONE variant's actual
+      // panel source now — V2 "Canvas-native" points `--v-panel` straight at
+      // it (see app.css's `[data-variant='2']` block), but V1 "Verbatim" and
+      // V3 "Inline" point it at open-pencil's own literal hex BY DESIGN — the
+      // whole brief for those two variants. `--v-panel` is the one name every
+      // variant defines, so probing it is "does the dock paint what its own
+      // variant declares", the same invariant this check always meant, one
+      // level of indirection later. The probe is appended INSIDE the dock
+      // (not `.tl-container`) because `--v-panel` is scoped to
+      // `[data-testid="inspector"][data-variant]`, one level more specific
+      // than the M1-era bridge this replaces — see app.css's own WHY.
       const dockPaintVsPanelVar = () => evaluate(page, `JSON.stringify((() => {
+        const dockEl = document.querySelector('[data-testid="inspector"]')
         const probe = document.createElement('span')
-        probe.style.background = 'var(--tl-color-panel)'
-        document.querySelector('.tl-container').appendChild(probe)
+        probe.style.background = 'var(--v-panel)'
+        dockEl.appendChild(probe)
         const panel = getComputedStyle(probe).backgroundColor
         probe.remove()
-        const dock = getComputedStyle(document.querySelector('[data-testid="inspector"]')).backgroundColor
+        const dock = getComputedStyle(dockEl).backgroundColor
         return { dock, panel }
       })())`).then(JSON.parse)
 
@@ -314,12 +328,16 @@ async function main() {
       })())`).then(JSON.parse)
 
       // One UNPRESSED geometry tile's ink, and the dock's own `--foreground` —
-      // both read fresh in whichever theme is live when called.
+      // both read fresh in whichever theme is live when called. Probed
+      // INSIDE the dock, same reason as `dockPaintVsPanelVar` above:
+      // `--foreground` is re-pointed at `--v-surface` one level more
+      // specific than `.tl-container`'s own bridge, per variant.
       const tileInk = () => evaluate(page, `JSON.stringify((() => {
+        const dockEl = document.querySelector('[data-testid="inspector"]')
         const tile = document.querySelector('[data-testid="inspector-tile-geo-ellipse"]')
         const probe = document.createElement('span')
         probe.style.color = 'var(--foreground)'
-        document.querySelector('.tl-container').appendChild(probe)
+        dockEl.appendChild(probe)
         const foreground = getComputedStyle(probe).color
         probe.remove()
         return { tile: getComputedStyle(tile).color, foreground }
@@ -339,7 +357,7 @@ async function main() {
         await captureFullDock(page, join(outDir, 'inspector-dock-light.png'))
       }
 
-      // Dark mode: the dock's own background follows `--tl-color-panel`
+      // Dark mode: the dock's own background follows its variant's `--v-panel`
       // exactly, differs from the light-mode reading above, the header stays
       // readable, and the tile ink follows the theme instead of painting
       // black on dark grey.
@@ -348,7 +366,7 @@ async function main() {
         await delay(200)
         const darkValues = await dockPaintVsPanelVar()
         checklist.add(
-          'dark mode: the dock background equals --tl-color-panel and differs from light',
+          "dark mode: the dock background equals this variant's own --v-panel and differs from light",
           darkValues.dock === darkValues.panel && darkValues.dock !== lightValues.dock,
         )
 
