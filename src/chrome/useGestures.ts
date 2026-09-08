@@ -98,6 +98,27 @@ export function useGestures(editor: Editor | null): void {
 		}
 	}, [editor])
 
+	// Pan/zoom speed, through tldraw's OWN camera options.
+	//
+	// WHY not a multiplier inside the wheel handler above: tldraw's camera owns
+	// momentum, trackpad-vs-mouse detection and inertia, and `setCameraOptions`
+	// is the seam it exposes for exactly this. Scaling deltas ourselves would
+	// silently replace all of that with something cruder — the same "extend
+	// through the engine's seam, never beside it" rule the shape utils follow.
+	useEffect(() => {
+		if (!editor) return
+		const apply = (settings: GestureSettings) => {
+			const stock = editor.getCameraOptions()
+			editor.setCameraOptions({
+				...stock,
+				panSpeed: settings.panSpeedPercent / 100,
+				zoomSpeed: settings.zoomSpeedPercent / 100,
+			})
+		}
+		apply(getGestureSettings())
+		return subscribeToGestureSettings(apply)
+	}, [editor])
+
 	// Paste under the cursor.
 	//
 	// WHY this is a separate effect keyed the same way: tldraw pastes at the

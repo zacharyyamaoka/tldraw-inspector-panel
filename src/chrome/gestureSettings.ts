@@ -52,7 +52,23 @@ export interface GestureSettings {
 	/** Paste (and duplicate) at the pointer rather than at the viewport centre. */
 	pasteUnderCursor: boolean
 	bindings: Record<WheelGesture, WheelCommand>
+	/**
+	 * Pan and zoom speed as a PERCENTAGE of tldraw's own, applied through
+	 * `editor.setCameraOptions({ panSpeed, zoomSpeed })`.
+	 *
+	 * WHY a percentage of the stock value rather than a raw multiplier, and why
+	 * it goes through tldraw's own camera options instead of our wheel handler:
+	 * SystemSketch settled both questions already (`src/canvasCamera.ts`,
+	 * `settings/appearancePreferences.ts`) — product language keeps 100 the
+	 * obvious reset point, and the camera options seam means tldraw keeps
+	 * owning momentum, trackpad detection and inertia, which a hand-rolled
+	 * wheel multiplier would quietly replace with something worse.
+	 */
+	panSpeedPercent: number
+	zoomSpeedPercent: number
 }
+
+export const SPEED_PERCENT_OPTIONS = [25, 50, 75, 100, 150, 200] as const
 
 /**
  * WHY these particular defaults: they are what tldraw ALREADY does, so a fresh
@@ -69,6 +85,13 @@ export const DEFAULT_GESTURE_SETTINGS: GestureSettings = {
 		ctrlWheelDown: 'zoom-out',
 		ctrlWheelUp: 'zoom-in',
 	},
+	// 50%, not 100%: Zach on the running app — "please add an option to adjust
+	// the scroll sensitivity as well. right now its way to high". tldraw's stock
+	// speed is tuned for a trackpad; on a wheel mouse each notch throws the
+	// board. The control exists so this is a starting point rather than a guess
+	// imposed on everyone, and 100 is one click away.
+	panSpeedPercent: 50,
+	zoomSpeedPercent: 50,
 }
 
 const STORAGE_KEY = 'tldraw-lab.gestures.v1'
@@ -95,11 +118,17 @@ export function loadGestureSettings(): GestureSettings {
 			const candidate = parsed.bindings?.[gesture]
 			if (isCommand(candidate)) bindings[gesture] = candidate
 		}
+		const percent = (value: unknown, fallback: number) =>
+			typeof value === 'number' && Number.isFinite(value) && value >= 10 && value <= 400
+				? value
+				: fallback
 		return {
 			pasteUnderCursor: typeof parsed.pasteUnderCursor === 'boolean'
 				? parsed.pasteUnderCursor
 				: DEFAULT_GESTURE_SETTINGS.pasteUnderCursor,
 			bindings,
+			panSpeedPercent: percent(parsed.panSpeedPercent, DEFAULT_GESTURE_SETTINGS.panSpeedPercent),
+			zoomSpeedPercent: percent(parsed.zoomSpeedPercent, DEFAULT_GESTURE_SETTINGS.zoomSpeedPercent),
 		}
 	} catch {
 		// A corrupt blob must never take the app down with it.

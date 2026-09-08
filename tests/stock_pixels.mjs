@@ -153,6 +153,13 @@ async function readDockRects(page) {
   const rects = {}
   try { rects.inspector = await elementBox(page, '[data-testid="inspector"]') } catch { /* not this route */ }
   try { rects.controlCluster = await elementBox(page, '[data-testid="inspector-control-cluster"]') } catch { /* not this route */ }
+  // The board name beside the main menu (`components.TopPanel`, index.html
+  // only). Masked for the same reason the control cluster is: it is OUR chrome,
+  // and this gate's question is whether the chrome stack changes what TLDRAW
+  // paints — not whether we added a control that bare.tsx does not mount. The
+  // gate's printed "masked area" grows when this is added, so the mask can
+  // never quietly widen without showing up in the output.
+  try { rects.documentName = await elementBox(page, '[data-testid="document-name"]') } catch { /* not this route */ }
   try { rects.stylePanel = await elementBox(page, '.tlui-style-panel__wrapper') } catch { /* nothing selected */ }
   return rects
 }
@@ -240,6 +247,7 @@ function padRect(rect, pad) {
 function masksForClosed(indexVariant, what) {
   const rects = []
   const fromIndex = indexVariant.rects[what] ?? {}
+  if (fromIndex.documentName) rects.push(padRect(fromIndex.documentName, 8))
   if (fromIndex.controlCluster) rects.push(padRect(fromIndex.controlCluster, 8))
   return rects
 }
@@ -253,6 +261,7 @@ function masksForClosed(indexVariant, what) {
 function masksForOpen(indexVariant, what) {
   const rects = []
   const fromIndex = indexVariant.rects[what] ?? {}
+  if (fromIndex.documentName) rects.push(padRect(fromIndex.documentName, 8))
   if (fromIndex.inspector) rects.push(fromIndex.inspector)
   if (fromIndex.controlCluster) rects.push(padRect(fromIndex.controlCluster, 8))
   return rects
