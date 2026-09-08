@@ -227,6 +227,75 @@ clone was `--depth 1`. A `git log -S` sweep over a single commit reports "never
 happened" for everything, which is exactly how the panel was declared to have
 never existed. The full clone is 1,640 commits and 169 tags. Never reconnoitre a
 repository's history from a shallow clone.
+## 2026-09-07 — M5b: the Inspector shipped as a shadcn registry
+
+Landed the M5b brief on worktree `m5b-registry`: `registry.json` with one
+composite item (`tldraw-inspector`), `npm run registry:build` (`shadcn
+build`, committed `public/r/**`), `npm run registry:serve` (a plain Node
+static server on :5182), and `tests/registry.test.ts` — the producer-side
+half of the drift alarm, 7 checks, part of `npm run check` for free (it's a
+vitest file; nothing to wire up).
+
+**Item type: `registry:ui`, not `registry:component`.** The item is
+consumed the way a UI primitive is — dropped into `components: { StylePanel:
+Inspector }`, tldraw's own extension seam for exactly this kind of
+component — even though it bundles the field model, overrides and paint
+seam alongside the view. shadcn's schema lets every *file* carry its own
+`type` independent of the item's; the item-level type only had to describe
+"what a consumer does with this," and "mount it as a panel" is closer to
+`ui` than to a page-level `component`.
+
+**`dependencies` grew two entries past the M5b brief's literal three.** The
+brief listed `tldraw@5.3.2`, `@base-ui/react@1.8.0`, `react-colorful`; the
+actual grep across `src/inspector/*.ts*` also turned up `lucide-react`
+(`ChevronRight`, `Inspector.tsx`) and `cn` (`Inspector.tsx`,
+`ScrubNumber.tsx` — this repo generated shadcn components against the `cn`
+npm package rather than a hand-rolled `@/lib/utils`, see M1's `components.json`).
+Both are real runtime imports every installed copy needs; leaving them out
+would have been the exact drift the sync test exists to catch, just
+pre-loaded into the manifest instead of introduced later. `registry.test.ts`
+enforces this generally (every non-relative, non-react/tldraw import must be
+declared) rather than pinning the five names, so a future file added to the
+item can't reintroduce the gap.
+
+**`css`'s exact shape came from reading the installed `shadcn` CLI, not the
+docs.** The registry-item-json reference shows `css` examples keyed by plain
+selectors (`"@layer base": { "h1": {...} }`) but never a body-less directive
+like `@custom-variant dark (&:is(.dark *));` — app.css's own line. Reading
+`node_modules/shadcn/dist/chunk-B2MD6U5O.js`'s `update-css` postcss plugin
+directly: a top-level key starting with `@` is split into `name` + `params`
+by `/@([a-zA-Z-]+)\s*(.*)/`, and an **empty-object value** (`{}`) becomes a
+semicolon-terminated at-rule with no body — i.e. the whole `@custom-variant
+dark (...)` text is the *key*, mapped to `{}`. A non-`@` key goes through
+`Ge()`, a plain CSS rule whose value is either raw decl pairs or a raw CSS
+string. Shipped:
+```json
+"css": {
+  "@custom-variant dark (&:is(.dark *, .tl-theme__dark *))": {},
+  "[data-slot=\"popover-content\"], [data-slot=\"tooltip-content\"]": {
+    "font-family": "var(--font-sans)"
+  }
+}
+```
+Verified empirically: `npx shadcn build` on this exact registry.json
+produced the expected item JSON (checked by hand), and this is the shape
+SystemSketch's `npx shadcn add` actually consumed — see its own log entry.
+Kept the `tooltip-content` half of app.css's rule alongside
+`popover-content` (the brief named only the popover half) — they're one CSS
+rule in app.css, not two, and dropping half of it would ship the exact
+font bug M2's audit fixed, just for `Tooltip` instead of `Popover`. The
+`.tl-container` token bridge (`app.css`'s `.tl-container { --background:
+var(--tl-color-panel); ... }` block) is deliberately NOT in `css` — a
+consumer owns its own bridge onto its own theme (SystemSketch's is `--ss-*`,
+not `--tl-*`); shipping this lab's copy would silently override it.
+
+**Two peer branches (`src/inspector/**`, `src/compat/**`) were not touched.**
+No change this milestone needed to touch inspector source — the registry
+only describes files that already exist.
+
+**`public/r/**` is committed, not gitignored.** See README's new "Registry"
+section for the WHY (a registry has to be servable from a plain checkout;
+the drift alarm is what keeps a committed build from lying).
 
 ## 2026-09-07 — M2 view audit: five required fixes, all real bugs
 

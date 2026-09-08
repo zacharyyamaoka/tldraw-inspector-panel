@@ -43,6 +43,19 @@ Zero `radix-ui` / `@radix-ui/*` anywhere in `package.json` or `src/` — every
    back and nothing else; it does not know what a rectangle is.
 3. **Consumed by registry.** *(arrives in a later milestone — inspector
    panels register into a shared surface rather than being hand-wired.)*
+2. **The model decides, the view draws.** Live as of M2:
+   `src/inspector/inspectorModel.ts` is 1,182 lines of plain TypeScript with
+   no React and no tldraw-flavoured JSX — 50 `FieldSpec` entries, each with
+   `applies`/`read`/`write`, answering every question of *what a shape can
+   be*. `src/inspector/Inspector.tsx` renders whatever that model hands back
+   and nothing else; it does not know what a rectangle is.
+3. **Consumed by registry.** Landed M5b: `registry.json` describes one
+   composite shadcn item, `tldraw-inspector` — every file under
+   `src/inspector/`, the shadcn `ui` parts it actually imports declared as
+   `registryDependencies`, its real npm deps declared as `dependencies`, and
+   the two `app.css` rules a consumer needs that aren't tokens (the `.dark`
+   custom variant, the popover/tooltip font fix) declared as `css`. See
+   "Registry" below.
 
 ## Run it
 
@@ -52,6 +65,42 @@ npm --prefix /home/bam/tldraw_styling_lab run dev
 
 Then open <http://127.0.0.1:5180> (`--strictPort`: fails loudly instead of
 drifting to another port if 5180 is taken).
+
+## Registry
+
+`npm run registry:build` runs `npx shadcn build`, which reads `registry.json`
+and writes `public/r/tldraw-inspector.json` (embedding every listed file's
+current content) plus `public/r/registry.json`. **`public/r/**` is
+committed**, not gitignored — WHY: the point of a registry is that a
+consumer can `npx shadcn add <url>` against it, and the only thing that has
+to be true for that is "the URL serves the JSON" — committing the build
+output means a plain `git clone` + one server command makes that URL real,
+with no build step a consumer has to trust was run correctly first. The
+`tests/registry.test.ts` drift alarm below is what keeps the committed copy
+honest instead of `.gitignore` being asked to do it.
+
+Serve it two ways:
+
+- `npm run dev` already serves the whole project on :5180, `public/r/`
+  included — `http://127.0.0.1:5180/r/tldraw-inspector.json` works whenever
+  the dev server is up.
+- `npm run registry:serve` — a plain Node static server (no bundler) on
+  :5182 for when it is not (`SYSTEMSKETCH_REGISTRY_PORT` overrides the port).
+
+A consumer installs it with:
+
+```
+npx shadcn add http://127.0.0.1:5180/r/tldraw-inspector.json
+```
+
+`tests/registry.test.ts` (vitest, part of `npm run check` for free) is the
+producer-side half of the drift alarm: every listed file exists, every
+`@/components/ui/<x>` import is declared in `registryDependencies` (and vice
+versa — nothing declared that nothing imports), every other bare import is
+declared in `dependencies`, and a scratch rebuild of the registry matches
+the committed `public/r/tldraw-inspector.json` byte-for-byte. The consumer-
+side half (does an installed copy still match what the registry says today)
+is SystemSketch's `tests/test_inspector_registry_sync.py`, not this repo's.
 
 ## Test it
 
