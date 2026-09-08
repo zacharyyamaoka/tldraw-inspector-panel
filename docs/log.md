@@ -1,5 +1,115 @@
 # Log
 
+## 2026-09-07 — M2 view audit: five required fixes, all real bugs
+
+An independent audit of `tests/out/inspector-dock-{light,dark,stock-route}.png`
+rejected the M2 view on five points. All five turned out to be real defects,
+not taste calls — `npm run check` (tsc, 97 vitest, the pixel gate, 23/23
+`test:inspector`) is green with the fixes in.
+
+**1. Section headers.** The Collapsible trigger was a raw `<button>` with no
+background/border/padding reset. This lab's `app.css` deliberately imports
+Tailwind WITHOUT preflight (see its own top-of-file WHY), so nothing strips
+the browser's own button chrome — measured before the fix:
+`background-color: rgb(239, 239, 239)`, `border: 2px outset rgb(0, 0, 0)`,
+`padding: 1px 6px`, all straight from Chromium's UA stylesheet. The label's
+`text-foreground` colour was correct throughout (measured `rgb(249, 250,
+251)` in dark mode, matching `--foreground` exactly) — the bug was purely the
+untouched grey fill making light text on light grey unreadable. Fixed with an
+explicit reset (`border-0 bg-transparent p-0 appearance-none`) on the one raw
+button left, sentence-case labels (removed a stray `uppercase` class — the
+model's `GROUP_LABELS` were already "Layer"/"Shape"/"Fill" etc., never
+actually uppercase), a `lucide-react` `ChevronRight` that rotates via Base
+UI's `data-panel-open` attribute, `hover:bg-accent`, and a `Separator`
+between groups (not after the last one). Journey measures real contrast:
+**light 20.47:1, dark 15.52:1** (both ≥ 4.5:1), read from `getComputedStyle`
+on the header button and the dock's own background, converted with a small
+WCAG relative-luminance helper (`parseRgb`/`relativeLuminance`/
+`contrastRatio` in `tests/inspector_smoke.mjs`, no dependency).
+
+**2. Segments clipping.** `SegmentGroup`'s `ToggleGroup` had no `flex-wrap`,
+so a 6-option row (Fill style: none/semi/solid/pattern/fill/lined-fill) ran
+off the 280px dock. Fixed with `flex-wrap` on the group and `min-w-fit
+flex-1` on each item — chosen over a fixed-column grid because the model
+draws rows from 3 options (Align) to 6 (Fill style), and one column count
+cannot fit both without a ragged or squeezed grid. Journey asserts every
+`inspector-segment-*`/`inspector-tile-*` element's `getBoundingClientRect()`
+stays within the dock's own rect on the rectangle — 0 clipped.
+
+**3. Tile ink.** Geometry tiles painted black glyphs in dark mode. Root
+cause: a `<button>` does not inherit `color` from its DOM ancestor the way
+ordinary elements do (the UA stylesheet gives it its own `ButtonText` system
+colour) — measured `rgb(0, 0, 0)` on an unclassed tile in dark mode, against
+`--foreground: #f9fafb`. Fixed with an explicit `text-foreground` on
+`TileGroup`'s `ToggleGroupItem`, letting the SVG's existing `fill-current`/
+`stroke-current` (`Glyph`) resolve it. No separate pressed colour — shadcn's
+own `Toggle` only changes the background (`data-[state=on]:bg-muted`) and
+leaves text colour alone, so matching that is "whatever the shadcn toggle
+already does," not a third scheme. Journey confirms an unpressed tile's
+`color` equals `--foreground` in both themes.
+
+**4. The stock route gets its own entry.** `bare.html?inspector=1` mounted
+the Inspector with zero stylesheet — raw unstyled inputs, a full-width black
+SVG triangle, `Times New Roman` throughout. Root cause of *that* rendering
+(distinct from bugs 1-3): `bare.html` never loads `app.css`, so a
+chrome-dependent component has nothing to draw itself with — mounting the
+Inspector there was never going to look right, and doing it via a query
+switch also meant `bare.html`, the pixel gate's control, could silently gain
+chrome behind a flag nobody audits by default. Fixed structurally: `bare.tsx`
+reverted byte-for-byte to its M1 state (no switch, no Board props at all);
+new `stock.html` → `src/stock.tsx` loads the full chrome stack AND the
+Inspector but not `CONFIGURED_SHAPE_UTILS` — the actual "otherwise-stock
+canvas" the paint-withholding claim needs to be honestly tested against.
+`src/board/mount.tsx`'s `Board` no longer imports `Inspector`/
+`CONFIGURED_SHAPE_UTILS` or picks between them on a boolean at all; it takes
+plain `components`/`shapeUtils` pass-through props matching `<Tldraw>`'s own
+prop names, and every entry (`App.tsx`, `stock.tsx`, `bare.tsx`) states its
+own chrome in full. `stock.html` added to `vite.config.ts`'s rollup inputs.
+`tests/inspector_smoke.mjs`'s stock-route checks now navigate to
+`stock.html?seed=stock`.
+
+**5. Journeys own their output directories.** `tests/stock_pixels.mjs`'s
+`rm(outDir, {recursive: true})` targeted the shared `tests/out/`, so running
+it after `tests/inspector_smoke.mjs` deleted the Inspector's own captures —
+exactly what happened to produce the audited screenshots being stale by the
+time they were reviewed a second time. Fixed: `stock_pixels.mjs` writes to
+`tests/out/stock_pixels/`, `inspector_smoke.mjs` to
+`tests/out/inspector_smoke/`, each `rm`+`mkdir`s only its own subdirectory.
+Verified by running both back-to-back in each order and confirming neither's
+captures vanish. Convention documented in README's "Test it" section.
+
+**Also (small):** the header sits above `ScrollArea` as a separate flex item
+(`flex h-full flex-col`), never `position: sticky` inside the scrolling
+content, so there was nothing to cover the first group on scroll — confirmed
+by inspection, no code change needed. And a real, separate bug the "add
+font-sans" request surfaced: the dock itself had **no** font-family set
+anywhere — measured `Times New Roman` on `[data-testid="inspector"]` before
+the fix, because M1 deliberately drops shadcn's `@layer base { html { @apply
+font-sans } }` block (protecting the pixel gate) and M2 never added `font-
+sans` anywhere in its place. Fixed with `font-sans` on the dock root, which
+fixes every actual DOM descendant of it. That does NOT reach a `Popover`'s
+content — Base UI's `PopoverPortal` appends to `<body>` by default (its own
+`.d.ts`: "By default, the portal element is appended to `<body>`"), a
+sibling of `#root` rather than a descendant of the dock, confirmed by walking
+`parentElement` from the popup to `<body>` directly. Setting `body`'s font
+globally was rejected — that is exactly the mechanism M1's own layers-only
+architecture exists to avoid (a global font change cascading into
+`.tl-container` and shifting canvas text geometry). Instead, `app.css` gets
+one narrowly-scoped rule targeting the portal's own `data-slot` attribute
+(`[data-slot="popover-content"], [data-slot="tooltip-content"] { font-family:
+var(--font-sans) }`), which can never match anything present during
+`tests/stock_pixels.mjs`'s captures. Journey opens the stroke-colour popover
+and asserts its computed `font-family` contains "Geist" (not merely "not
+serif" — the correct stack's own generic fallback, `sans-serif`, contains the
+literal substring "serif").
+
+**Screenshots** (all in `tests/out/inspector_smoke/`, full dock height —
+`captureFullDock()` temporarily grows the viewport to fit every group
+expanded, screenshots, then restores it):
+`inspector-dock-light.png`, `inspector-dock-dark.png`,
+`inspector-dock-stock-route.png`, `inspector-color-popover-open.png` (full
+page, light theme, stroke-colour popover open).
+
 ## 2026-09-07 — M2: the panel on the seam, with the ported model
 
 Landed the M2 brief: `components={{ StylePanel: Inspector }}` on the chrome

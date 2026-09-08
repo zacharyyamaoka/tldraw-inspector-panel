@@ -74,7 +74,15 @@ both the idle-board and panel-open states. It then loads
 (`tailwindcss/preflight.css`) the whole layers-only approach exists to keep
 out — and asserts *that* diff comes back non-zero outside the dock too, as a
 mutation check that the gate can actually fail. Captured PNGs and diff images
-land in `tests/out/` (gitignored).
+land in `tests/out/stock_pixels/` (gitignored).
+
+**Each journey owns its own subdirectory of `tests/out/`, and clears only
+that one.** `tests/stock_pixels.mjs` writes to `tests/out/stock_pixels/`,
+`tests/inspector_smoke.mjs` to `tests/out/inspector_smoke/`. A shared
+`tests/out/` used to mean either journey's own `rm(outDir, {recursive:
+true})` deleted the other's captures the moment it ran second — a real
+regression a review caught. A new journey follows the same rule: pick a name,
+write there, `rm` only there.
 
 **The dock mask, since M2:** `index.html` now mounts the Figma-shaped
 `Inspector` (below) in place of tldraw's own style panel, so the two entries
@@ -90,8 +98,8 @@ The table it prints names the masked area on every run.
 
 **The Inspector journey** (`tests/inspector_smoke.mjs`) drives the built app
 in headless Chrome against `index.html?seed=stock` (paint seam installed) and
-`bare.html?seed=stock&inspector=1` (the stock route, seam withheld) — 17
-checks, every one read off the editor's own record or the painted SVG, never
+`stock.html?seed=stock` (the stock route, seam withheld) — 23 checks, every
+one read off the editor's own record or the painted SVG/computed style, never
 off the panel's own DOM alone.
 
 ## URL switches (dev-only, read once at startup)
@@ -100,32 +108,42 @@ off the panel's own DOM alone.
 |---|---|
 | `?seed=stock` | seeds the nine-shape probe board (fixed shape ids) instead of loading the persisted board, and skips `persistenceKey` entirely so the run never touches, or creates, real IndexedDB state |
 | `?preflight=1` | (`index.html` only) dynamically imports `tailwindcss/preflight.css` — exists solely so the pixel gate's mutation check has something real to catch; never loads on a normal visit |
-| `?inspector=1` | (`bare.html` only) mounts the Figma-shaped `Inspector` on the bare canvas — no `CONFIGURED_SHAPE_UTILS`, so every `paint`-sourced row withholds itself (`paintReaches` false in `inspectorModel.ts`) instead of writing `meta` that changes no pixel. `index.html` always mounts it; this switch exists only to prove the stock route is honest. |
 
 Every mount exposes `window.__lab = { editor, ready: true }` once tldraw is
 mounted (and seeded, if `?seed=` was present) — that's what tests wait on.
 
-## Two entries
+## Three entries
 
 - `index.html` → `src/main.tsx` → `src/App.tsx`: the real app, full chrome
-  stack (`tldraw/tldraw.css` + `src/styles/app.css`), `persistenceKey:
-  "tldraw_styling_lab"` on a plain load.
+  stack (`tldraw/tldraw.css` + `src/styles/app.css`), the Inspector AND
+  `CONFIGURED_SHAPE_UTILS`, `persistenceKey: "tldraw_styling_lab"` on a plain
+  load.
 - `bare.html` → `src/bare.tsx`: the pixel gate's control — identical board,
-  `tldraw/tldraw.css` only, no Tailwind/shadcn/Base UI anywhere.
+  `tldraw/tldraw.css` only, no Tailwind/shadcn/Base UI anywhere, tldraw's own
+  `DefaultStylePanel`. Never carries the Inspector; see the WHY in
+  `src/board/mount.tsx`.
+- `stock.html` → `src/stock.tsx`: the chrome stack (so the Inspector renders
+  with its real styling) and the Inspector, but **no** `CONFIGURED_SHAPE_UTILS`
+  — an otherwise-completely-stock canvas, which is what the stock route
+  (below) needs to honestly prove.
 
-Both mount through `src/board/mount.tsx` and seed through
-`src/board/seed.ts` — the only two files either entry can construct a board
+All three mount through `src/board/mount.tsx` and seed through
+`src/board/seed.ts` — the only two files any entry can construct a board
 from, so they cannot silently drift apart.
 
 ## The Inspector (M2)
 
-`src/board/mount.tsx`'s `Board` takes two props the two entries set
-differently: `withInspector` (mount `src/inspector/Inspector.tsx` in place of
-tldraw's `DefaultStylePanel`, through the stock `components={{ StylePanel
-}}` seam) and `withConfiguredUtils` (register `CONFIGURED_SHAPE_UTILS` —
-`src/inspector/configuredUtils.ts` — instead of tldraw's defaults). `index.html`
-always sets both; `bare.html` sets neither unless `?inspector=1` sets the
-first alone, which is what makes the stock route (below) exist at all.
+`src/board/mount.tsx`'s `Board` takes two plain pass-through props —
+`components` and `shapeUtils`, the same names and shapes `<Tldraw>` itself
+takes — and every entry states its own chrome in full: `index.html` passes
+both (`{ StylePanel: Inspector }` and `CONFIGURED_SHAPE_UTILS`), `stock.html`
+passes `components` alone, `bare.html` passes neither. `mount.tsx` itself
+does not import `Inspector` or `CONFIGURED_SHAPE_UTILS` at all — a design
+correction from M2's first cut, where `Board` picked between them on a
+`withInspector` boolean and defaulted to `false`, which is exactly how
+`bare.html` grew an Inspector behind a `?inspector=1` query switch. A future
+entry that forgets a prop now gets tldraw's own default for it, never a
+half-mounted chrome stack it didn't ask for.
 
 - **`src/inspector/inspectorModel.ts`** (React-free) — ported verbatim from
   SystemSketch (`77907974`, `src/inspector/primitiveInspectorModel.ts`) with
@@ -161,11 +179,12 @@ first alone, which is what makes the stock route (below) exist at all.
   toggle group, switch, scroll area) is a package. Colour rows use
   `react-colorful`'s `HexAlphaColorPicker` — the only new dependency this
   milestone took.
-- **The stock route** — `bare.html?inspector=1` mounts the same `Inspector`
-  on a canvas with none of `CONFIGURED_SHAPE_UTILS` installed, so every
+- **The stock route** — `stock.html` mounts the same `Inspector` on a chrome
+  -styled canvas with none of `CONFIGURED_SHAPE_UTILS` installed, so every
   `paint` row withholds itself instead of writing `meta` that changes no
   pixel (`paintReaches(shape, editor)` in `inspectorModel.ts`). One field
-  list, one predicate, two routes.
+  list, one predicate, three routes (`bare.html` stays tldraw's own panel,
+  untouched, for the pixel gate's control).
 
 Two real bugs the Inspector journey (`tests/inspector_smoke.mjs`) caught, not
 inferred: a hand-styled `NumberField.Input` missing `min-w-0` let a
