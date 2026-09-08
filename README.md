@@ -169,9 +169,36 @@ measured and printed rather than assumed. Screenshots land in
 |---|---|
 | `?seed=stock` | seeds the nine-shape probe board (fixed shape ids) instead of loading the persisted board, and skips `persistenceKey` entirely so the run never touches, or creates, real IndexedDB state |
 | `?preflight=1` | (`index.html` only) dynamically imports `tailwindcss/preflight.css` — exists solely so the pixel gate's mutation check has something real to catch; never loads on a normal visit |
+| `?variant=1\|2\|3` | (branch `variants`, not on `main`) which inspector theme+layout the dock draws — 1 "Verbatim" (default), 2 "Canvas-native", 3 "Inline"; see `docs/log.md`'s variants entry. Read once at startup like every switch above; a 22px three-segment picker in the dock's own tab bar reloads to flip it live. |
 
 Every mount exposes `window.__lab = { editor, ready: true }` once tldraw is
 mounted (and seeded, if `?seed=` was present) — that's what tests wait on.
+
+## Three inspector variants (branch `variants`)
+
+Zach rejected the shipped panel's look outright ("don't like these large
+buttons") and asked for three genuinely different directions against
+open-pencil's own measured classes, on the `variants` branch (not merged —
+he audits and picks). `src/inspector/variants/theme.ts` names them and
+`kit.tsx` draws them; full rationale, what was copied verbatim vs.
+deliberately deviated from, and the two real bugs the mandatory-behaviour
+checks caught: `docs/log.md`'s "Three inspector variants" entry.
+
+Two behaviours are mandatory in every variant, regardless of theme:
+
+- **Drag-to-resize** — an 8px handle on the dock's left edge, clamped
+  240-480px, double-click resets to 280, persisted to `localStorage`
+  (skipped under `?seed=`, same rule `persistenceKey` follows).
+- **The whole number field scrubs**, not just its glyph — `ScrubNumber.tsx`
+  now runs open-pencil's own pointer contract (measured from
+  `NumberFieldRoot.vue`), hand-rolled on top of Base UI because
+  `NumberField.ScrubArea` can only wrap a child, and widening that child to
+  the whole field would race the input's own native click-to-caret on the
+  same element every time.
+
+`tests/inspector_smoke.mjs` proves both, plus explicit ink and no clipping
+at the 240px floor, against fresh pages for `?variant=1`, `2` and `3` (81/81
+checks total, up from 33).
 
 ## Three entries
 

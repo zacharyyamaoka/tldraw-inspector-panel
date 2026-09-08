@@ -1,5 +1,168 @@
 # Log
 
+## 2026-09-07 — Three inspector variants (Verbatim, Canvas-native, Inline)
+
+Zach's own words on the panel M2-M5b built: "Don't like how this inspector
+looks right now at all… more closely match the open pencil UX/UI… I
+particularly don't like these large buttons." This entry is three visual
+directions built on `.worktrees/variants` (branch `variants`, not merged —
+Zach audits and picks), sharing one skeleton and two mandatory behaviours,
+against open-pencil's own MEASURED classes (the clone at
+`/home/bam/.claude/jobs/c3a25911/tmp/open-pencil`), not a paraphrase of them.
+
+**Copied verbatim, file by file, from the clone:**
+
+- `src/theme/panel/field.ts` — `panelFieldBase`/`panelIconButtonBase`, ported
+  to `kit.tsx` with every colour swapped for a `var(--v-*)` reference (the
+  structure, states and sizing are copied; the colour SOURCE is this app's
+  own variant palette, not open-pencil's Tailwind config).
+- `src/theme/input/number-field.ts` — the root/leading/field/suffix/mixed
+  class shapes, same swap.
+- `src/theme/select/segmented-control.ts` — `segmentRootClass`/
+  `segmentItemClass`, byte-for-byte structure (`h-[22px]`, `gap-0.5`,
+  `rounded-sm`, the `data-[state=on]` pair).
+- `src/theme/panel/section.ts` / `field-group.ts` / `grid.ts` / `header.ts` /
+  `item-row.ts` — `sectionRootClass`, `sectionHeaderClass`,
+  `fieldGroupLabelClass`, `listRowClass`.
+- `src/theme/splitter.ts` — the `-mx-1 w-2 cursor-col-resize` handle
+  (mirrored to `-ml-1` since this dock's handle sits on its LEFT edge, not
+  the donor's right one — a right-anchored panel's splitter is the left-
+  anchored donor's own shape reflected, not a new design).
+- `packages/vue/src/primitives/NumberField/NumberFieldRoot.vue`'s
+  `startScrub`/`finish` — the exact pointer contract `ScrubNumber.tsx` now
+  runs: pointerdown on the root (never a `<button>`) with
+  `preventDefault()`+`setPointerCapture`; a 2px threshold; past it, the value
+  tracks `dx * step * sensitivity` and the cursor goes `ew-resize`; under it,
+  release calls `startEdit()` (focus + select the input). Read straight from
+  the `.vue` source in the clone, quoted in `ScrubNumber.tsx`'s own header.
+- `src/app.css` — the light/dark hex tables (panel/panel-secondary/field/
+  field-hover/focus/border/hover/accent/surface/muted), one set, reused by
+  both V1 and V3 (the brief names a second LAYOUT for V3, never a second
+  palette).
+- Zach's own screenshots (`Pasted image 20260907204133.png`,
+  `20260907204017.png`) for the geometry (24px fields, 22px segment items,
+  32px section headers) and the drag region (whole field, not the glyph).
+
+**What Base UI's `NumberField.ScrubArea` could not do, and why it was
+dropped rather than widened:** it only wraps whatever child it is given.
+Widening that child to the whole field puts the scrub surface and the
+`<input>`'s own native mousedown-to-caret behaviour on the identical
+element, and ScrubArea's pointer capture wins that race every time — a
+plain click could never place a caret at all. `ScrubNumber.tsx` hand-rolls
+the root pointer handlers instead (mirroring `NumberFieldRoot.vue` exactly,
+per its own header comment), and keeps Base UI for value state, clamping and
+keyboard stepping (arrow keys, alt/shift granularity via
+`smallStep`/`largeStep`) — only the POINTER gesture moved out from under it.
+
+**The three axes, genuinely different, not three palettes on one layout:**
+
+- **V1 "Verbatim"** (`?variant=1`, default) — open-pencil's literal light/
+  dark hex; captions above fields; segmented TEXT for fill/dash/size/font,
+  segmented ICONS (tldraw's own SVGs, borrowed for the glyph only — not a
+  palette choice) for align/verticalAlign/textAlign; geometry as a `size-6`
+  icon-tile grid; colour rows as list rows (swatch, hex text, a derived
+  alpha % field, clear); a per-section `↺` reset once any of its own rows is
+  overridden.
+- **V2 "Canvas-native"** — identical geometry and identical `kit.tsx`
+  components; the palette is `.tl-container`'s OWN `--tl-color-*` tokens
+  (verified against `node_modules/tldraw/tldraw.css` at grep-time by the
+  pre-existing `theme_bridge.test.ts`, which needed no changes — it already
+  scans every `var(--tl-*)` reference in `app.css`, this block included);
+  every enum `tldrawIcons.tsx` ships an SVG for (fill, dash, size, font,
+  align, verticalAlign, textAlign, spline, arrowheadStart/End) draws that
+  SVG, recoloured to `currentColor` at import time. **Deviation:** `geo`
+  stays the hand-drawn `GEO_GLYPHS` tile set in all three variants — the
+  app's own `systemsketch-rounded-rect` has no tldraw asset to borrow, and
+  splitting "most geo tiles are tldraw's own SVG, one is hand-drawn" reads
+  as a bug, not a feature.
+- **V3 "Inline"** — the densest: `x`/`y`/`w`/`h`/`rotation`/`opacity` print
+  their letter/symbol prefix (`X`, `Y`, `W`, `H`, `°`, `%`) INSIDE the field
+  (`ScrubNumber`'s new `prefixText` prop) instead of a caption row above it;
+  an enum past 4 options (fill, dash, font — all 5-6 wide) collapses from a
+  segmented row to a `CompactSelect` styled to `panelFieldBase`; geometry
+  stays a tile grid; the per-section reset stays, same as V1.
+
+**The mandatory behaviours, once, shared by all three:**
+
+1. **Drag-to-resize** (`kit.tsx`'s `ResizeHandle` + `useDockWidth`): an 8px
+   handle on the dock's left edge, pointer-captured, clamped 240-480px,
+   double-click resets to 280, persisted to `localStorage`
+   (`tldraw_styling_lab.dockWidth`) — skipped under `?seed=`, the same rule
+   `persistenceKey` already follows (`mount.tsx`), so a journey run always
+   starts from the documented 280 default.
+2. **Whole-field scrub + click-to-edit** (`ScrubNumber.tsx`, above).
+3. **Explicit ink on every control** — no button/input inherits `color`
+   from an ancestor.
+4. **Nothing clips at 240px** — every segment/tile/field stays inside the
+   dock at the floor width.
+
+**Two real bugs the new checks caught, not inferred, both in the mandatory
+behaviours above:**
+
+- The explicit-ink rule (`app.css`) is `:where([data-testid="inspector"]
+  [data-variant]) :where(button, input) { color: var(--v-surface) }` —
+  `:where()` zeroes its OWN specificity so a real utility class (like an
+  unpressed segment's `text-[var(--v-muted)]`) always wins. That was not
+  enough on its own: the rule sat OUTSIDE every `@layer`, and this file's
+  own top-of-file import puts Tailwind's utilities INSIDE `layer(utilities)`
+  — cascade layers settle precedence BEFORE specificity is ever compared, so
+  an unlayered rule beats every layered one regardless of `:where()`.
+  Measured: every unpressed segment read as pressed until the ink rule moved
+  inside `@layer utilities` too. `:where()` and the layer are two different
+  axes of the cascade; neither alone fixed it.
+- `ResizeHandle` rendered BEFORE the tab bar in JSX. Both are normal-flow
+  siblings with no z-index, so the LATER one (the tab bar) painted on top
+  wherever their boxes overlap — which includes the handle's own inner half
+  (`-ml-1 w-2` straddles the dock's left edge). Every drag on the handle
+  silently produced zero width change and no console error, because the
+  pointerdown never reached it. `z-10` on the handle fixed it; found by the
+  new "resize to 360 survives a reload" check, not by looking.
+
+**Registry fallout, unplanned but real:** M5b's `registry.json`/
+`tests/registry.test.ts` (a shadcn registry item for the whole Inspector)
+predates this branch and asserts every registered file's `target` is FLAT
+under `src/inspector/` — this branch's own `variants/` subfolder (asked for
+by name in its own brief) fails that regex. Loosened it to allow one
+optional subdirectory level (`tests/registry.test.ts`, with a WHY pointing
+here) rather than flattening the folder structure the brief explicitly
+wanted; added `variants/theme.ts`/`kit.tsx`/`tldrawIcons.tsx` to
+`registry.json`'s file list, `select` to `registryDependencies`, and
+`@tldraw/assets` to `dependencies`, then reran `npm run registry:build`.
+
+**Deliberately not built:**
+
+- **A "+"/"add a fill" affordance.** Open-pencil's own screenshots show one;
+  this app's `fill`/`stroke` are always-present `StyleProp`s on the model
+  side, never addable/removable, so a `+` button here would control nothing
+  real — exactly the "a control that does nothing is a lie" failure
+  `inspectorModel.ts`'s own module comment already names.
+  `inspectorModel.ts` was not touched by this branch (the frame `showColors`
+  lane owns it this round; the one place variants reads it is the existing
+  `control.overridden` flag, already there).
+- **ThemePanel.tsx's own markup.** Its palette re-themes automatically —
+  it mounts inside the same `[data-testid="inspector"][data-variant]` div
+  Inspector.tsx's dock does, and every shadcn token it already reads
+  (`bg-background`, `text-foreground`, `border-border`, …) is re-pointed at
+  the same `--v-*` palette (see `app.css`'s own WHY) — `theme_smoke.mjs`'s
+  existing 12 checks stayed green unmodified, proof the cascade actually
+  reaches it. Its OWN controls (the Light/Dark mode `ToggleGroup`, the named-
+  colour section headers) were not rebuilt onto `kit.tsx`'s
+  `SegmentedControl`/`Section` — same visual family already, lower priority
+  than the Inspect tab Zach actually rejected, and out of this pass's time
+  budget. Flagged, not silently skipped.
+- **Per-row "eye" visibility toggles** open-pencil's screenshot shows next to
+  Fill/Stroke list rows — there is no model-side "hide this style" concept
+  to wire it to; building the affordance without the behaviour is the same
+  lie the `+` button would have been.
+
+`npm run check`: `tsc -b` clean, 123 vitest tests (the existing 116 plus
+`registry.test.ts`'s 7, all still green after the folder-target fix),
+`test:pixels` unchanged (0/0/763 outside the same 313380/331436 masked px —
+the variant/resize additions never touch anything the gate measures at its
+default 280px/light state), `test:inspector` **81/81** (the original 33 plus
+16 new mandatory-behaviour checks × 3 variants), `test:compat` 14/14,
+`test:theme` 12/12.
+
 ## 2026-09-07 — showColors is opt-in
 
 M3 landed `FrameShapeUtil.configure({ showColors: true })` unconditionally,
