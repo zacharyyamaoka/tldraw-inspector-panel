@@ -668,7 +668,26 @@ export function Inspector({ isMobile: _isMobile, styles: _styles, children: _chi
 			    inactive tab unmounts by default (Base UI's own behaviour), which is
 			    what keeps `InspectorPanel`'s selection-tracking effects from
 			    running while the Theme tab is the one on screen. */}
-			<Tabs defaultValue="inspect" className="h-full gap-0">
+			{/* WHY `mt-9`: stock tldraw's own `.tlui-share-zone` (the M4
+			    `StockCheckButton`, mounted via `components.SharePanel` in
+			    App.tsx) is normal-flow, top-right, ~32px tall — stock's own
+			    `.tlui-style-panel__wrapper` never collides with it because BOTH
+			    are flex siblings stacked top-to-bottom in tldraw's own layout.
+			    This dock breaks that by being `position: absolute` (M2's own
+			    WHY, load-bearing for the pixel gate's camera-stability
+			    invariant — not something to undo here), which takes it out of
+			    that flow entirely, so the tab bar drawn at this dock's own
+			    top:0 physically overlapped the Stock Check button's hit area
+			    once M4 landed — `elementFromPoint` at the Theme tab's own
+			    center returned the button, not the tab, so no click ever
+			    reached it. Clearing a fixed 36px (measured stock zone height
+			    ~32px + a few px, the same shape of buffer stock's own 4-8px
+			    margin uses) is simpler and more robust than reading the
+			    zone's live height, and costs nothing: the OUTER `data-testid=
+			    "inspector"` rect (what the pixel gate masks, and what
+			    `bottom-0`/`ScrollArea` size against) is unchanged — only the
+			    Tabs content inside it starts lower. */}
+			<Tabs defaultValue="inspect" className="mt-9 h-[calc(100%-2.25rem)] gap-0">
 				<TabsList variant="line" className="w-full shrink-0 rounded-none border-b border-border px-1 pt-1">
 					<TabsTrigger value="inspect" data-testid="inspector-tab-inspect">Inspect</TabsTrigger>
 					<TabsTrigger value="theme" data-testid="inspector-tab-theme">Theme</TabsTrigger>
