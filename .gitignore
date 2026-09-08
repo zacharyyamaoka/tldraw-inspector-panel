@@ -4,3 +4,4 @@ tests/out/
 reports/media/
 .review-runtime/
 *.local
+.worktrees/
