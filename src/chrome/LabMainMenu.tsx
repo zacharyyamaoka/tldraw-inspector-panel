@@ -58,7 +58,7 @@ function downloadSnapshot(editor: ReturnType<typeof useEditor>, filename: string
 	requestAnimationFrame(() => URL.revokeObjectURL(url))
 }
 
-function FileMenu() {
+export function FileMenu() {
 	const editor = useEditor()
 
 	const onNew = useCallback(() => {
@@ -176,7 +176,7 @@ const COMMAND_ORDER: WheelCommand[] = [
 
 const GESTURE_ORDER: WheelGesture[] = ['wheelDown', 'wheelUp', 'ctrlWheelDown', 'ctrlWheelUp']
 
-function GestureMenu() {
+export function GestureMenu() {
 	// `useSyncExternalStore` rather than local state: the settings live outside
 	// React (useGestures.ts reads them from a plain listener on every wheel
 	// event, where a hook cannot go), so the menu has to render from that store

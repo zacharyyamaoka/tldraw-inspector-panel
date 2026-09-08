@@ -1,8 +1,18 @@
+import type React from 'react'
 import { Board, readSeedMode } from './board/mount'
 import { CONFIGURED_SHAPE_UTILS } from './inspector/configuredUtils'
 import { DocumentNamePanel } from './chrome/DocumentNamePanel'
 import { LabContextMenu } from './chrome/LabContextMenu'
 import { LabMainMenu } from './chrome/LabMainMenu'
+import { BoardMenuVariant, SettingsDialogVariant } from './chrome/MenuVariants'
+import { readMenuVariant, type MenuVariant } from './chrome/menuVariant'
+
+/** `?menu=1|2|3` — three treatments Zach is comparing, see menuVariant.ts. */
+const MENU_BY_VARIANT: Record<MenuVariant, () => React.ReactElement> = {
+	1: LabMainMenu,
+	2: BoardMenuVariant,
+	3: SettingsDialogVariant,
+}
 import { Inspector } from './inspector/Inspector'
 import { readStoredThemes } from './inspector/themeStorage'
 
@@ -44,7 +54,7 @@ export default function App() {
     <Board
       components={{
         StylePanel: Inspector,
-        MainMenu: LabMainMenu,
+        MainMenu: MENU_BY_VARIANT[readMenuVariant()],
         ContextMenu: LabContextMenu,
         TopPanel: DocumentNamePanel,
       }}
